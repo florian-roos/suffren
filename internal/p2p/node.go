@@ -3,6 +3,8 @@ package p2p
 import (
 	"log"
 	"time"
+
+	"flatstate/internal/message"
 )
 
 var maxAttemptsForConnectionRetry = 5
@@ -60,7 +62,7 @@ func (n *Node) sentenceSender() {
 	defer conn.Close()
 
 	for {
-		msg := NewMessage(n.Port, n.Sentence)
+		msg := message.NewMessage(n.Port, n.Sentence)
 		err := SendMessage(conn, msg)
 		if err != nil {
 			log.Printf("[ERROR] Failed to send sentence: %v\n", err)

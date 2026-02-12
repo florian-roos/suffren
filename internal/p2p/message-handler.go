@@ -3,9 +3,18 @@ package p2p
 import (
 	"fmt"
 	"log"
+
+	"flatstate/internal/message"
 )
 
-func HandleIncomingMessages(conn *Connection, port string) {
+type MessageConnection interface {
+	Send(message.Message) error
+	Receive() (message.Message, error)
+	Close() error
+}
+
+// Receive a message, print it and send an ack
+func HandleIncomingMessages(conn MessageConnection, port string) {
 	defer conn.Close()
 
 	for {
@@ -17,7 +26,7 @@ func HandleIncomingMessages(conn *Connection, port string) {
 
 		fmt.Printf("RECEIVED: %s from: %s\n", msg.Payload, msg.Sender)
 
-		err = conn.Send(NewMessage(port, "ACK"))
+		err = conn.Send(message.NewMessage(port, "ACK"))
 		if err != nil {
 			log.Printf("[ERROR] Failed to send Ack")
 			return
@@ -25,7 +34,8 @@ func HandleIncomingMessages(conn *Connection, port string) {
 	}
 }
 
-func SendMessage(conn *Connection, msg Message) error {
+// Send a message.Message and wait for its ack before terminating
+func SendMessage(conn MessageConnection, msg message.Message) error {
 	err := conn.Send(msg)
 	if err != nil {
 		log.Printf("[ERROR] Failed to send message: %v\n", err)
