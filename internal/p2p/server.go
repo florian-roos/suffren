@@ -71,6 +71,7 @@ func (s *Server) handleConnection(msgChanel chan transport.IncomingMessage) {
 	conn := <-s.connections
 
 	defer s.wg.Done()
+	defer conn.Close()
 
 	s.mu.Lock()
 	s.activeConnections[conn] = struct{}{}
@@ -82,16 +83,27 @@ func (s *Server) handleConnection(msgChanel chan transport.IncomingMessage) {
 		s.mu.Unlock()
 	}()
 
-	msg, err := conn.Receive()
-	if err != nil {
-		log.Printf("[ERROR] Failed to receive message:%v\n", err)
-		return
-	}
-	msgChanel <- transport.IncomingMessage{
-		Message: msg,
-		Reply: func(msg protocol.Message) error {
-			return conn.Send(msg)
-		},
+	// Loop to handle multiple messages on the same connection
+	for {
+		msg, err := conn.Receive()
+		if err != nil {
+			log.Printf("[ERROR] Failed to receive message: %v\n", err)
+			return
+		}
+
+		// Check if server is shutting down
+		select {
+		case <-s.done:
+			return
+		default:
+		}
+
+		msgChanel <- transport.IncomingMessage{
+			Message: msg,
+			Reply: func(msg protocol.Message) error {
+				return conn.Send(msg)
+			},
+		}
 	}
 }
 
@@ -99,10 +111,12 @@ func (s *Server) Close() error {
 	log.Println("[SERVER] Closing...")
 	close(s.done)
 
-	err := s.listener.Close()
-	if err != nil {
-		log.Printf("[ERROR] Closing listener : %v", err)
-		return err
+	if s.listener != nil {
+		err := s.listener.Close()
+		if err != nil {
+			log.Printf("[ERROR] Closing listener : %v", err)
+			return err
+		}
 	}
 
 	s.mu.Lock()

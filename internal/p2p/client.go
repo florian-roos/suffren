@@ -52,7 +52,7 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 		return err
 	}
 
-	if ackReceived.Payload.Type != protocol.CmdAck || ackReceived.Id == msg.Id {
+	if ackReceived.Payload.Type != protocol.CmdAck || ackReceived.Id != msg.Id {
 		log.Printf("[ERROR] Invalid ACK received: %v, %v\n", ackReceived, msg)
 		return fmt.Errorf("invalid ACK")
 	}
@@ -94,7 +94,7 @@ func (c *Client) createConnection(targetAddr string) (*Connection, error) {
 }
 
 func (c *Client) Close() error {
-	c.mu.RLock()
+	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for addr, conn := range c.pool {
