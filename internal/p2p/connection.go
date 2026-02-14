@@ -2,9 +2,8 @@ package p2p
 
 import (
 	"encoding/gob"
+	"flatstate/internal/protocol"
 	"net"
-
-	"flatstate/internal/message"
 )
 
 type Connection struct {
@@ -23,14 +22,14 @@ func NewConnection(conn net.Conn) *Connection {
 	return &connection
 }
 
-func (connection Connection) Send(message message.Message) error {
+func (connection Connection) Send(message protocol.Message) error {
 
 	return connection.encoder.Encode(message)
 }
 
-func (connection Connection) Receive() (message.Message, error) {
+func (connection Connection) Receive() (protocol.Message, error) {
 
-	var message message.Message
+	var message protocol.Message
 	err := connection.decoder.Decode(&message)
 	return message, err
 }
