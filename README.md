@@ -87,56 +87,21 @@ Initial deployment with fixed N nodes:
 
 Quorum size: `⌊N/2⌋ + 1` (majority)
 
-## Current Status
-
-**Phase: Foundation** - Building core CRDT primitives and testing in isolation.
-
-See [TODO.md](TODO.md) for detailed milestone tracking.
-
 ## Roadmap
 
-### Milestone 1: GCounter Lattice ⬅️ Current
+See [TODO.md](TODO.md) for current progress.
 
-- Implement GCounter with Join (⊔) operation
-- Test partial order properties (reflexive, antisymmetric, transitive)
-- Test join is least upper bound (LUB)
-- Implement `⊑` comparison operator
+**Phase 1: CRDT Foundation**  
+Implement GCounter with lattice operations (join, partial order). Write unit tests.
 
-### Milestone 2: LA Message Types
+**Phase 2: Protocol Messages**  
+Define PROPOSE/ACK/NACK/LEARN messages. Wire them into the existing p2p layer.
 
-- Define PROPOSE/ACK/NACK/LEARN message structs
-- Implement serialization (JSON or Protocol Buffers)
-- Message routing in existing p2p layer
-- Sequence number tracking
+**Phase 3: Lattice Agreement**  
+Implement the LA protocol state machine and message handlers in the node.
 
-### Milestone 3: Node State Machine
-
-- Add LA state variables to Node struct
-- Load static configuration (N nodes, quorum size)
-- Implement propose() entry point
-- Response collection and quorum detection
-
-### Milestone 4: LA Protocol Handlers
-
-- `handlePropose()`: Accept if compatible, NACK otherwise
-- `handleAckNack()`: Collect responses, trigger LEARN or re-propose
-- `handleNack()`: Buffer incompatible values
-- `handleLearn()`: Adopt learned value, reliable broadcast
-
-### Milestone 5: Three-Node Integration Test
-
-- Start 3 nodes with static config file
-- Concurrent proposals from multiple nodes
-- Verify all nodes learn same final value
-- Test with simulated network delays
-- Measure convergence time (number of rounds)
-
-### Milestone 6: Correctness & Performance
-
-- Stress test with rapid concurrent proposals
-- Verify quorum intersection prevents conflicts
-- Benchmark throughput and latency
-- Add metrics and observability
+**Phase 4: End-to-End Testing**  
+Run 3-node cluster locally. Test sequential and concurrent proposals. Verify convergence.
 
 ## Design Decisions
 
