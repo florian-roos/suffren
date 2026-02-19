@@ -28,3 +28,10 @@ func NewAck(receivedMsg Message) Message {
 		Payload: Command{Type: CmdAck},
 	}
 }
+
+func NewNack(receivedMsg Message) Message {
+	return Message{
+		Id:      receivedMsg.Id,
+		Payload: Command{Type: CmdNack},
+	}
+}

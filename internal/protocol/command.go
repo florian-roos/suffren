@@ -6,6 +6,7 @@ const (
 	CmdPut CommandType = iota
 	CmdGet
 	CmdAck
+	CmdNack
 )
 
 type Command struct {

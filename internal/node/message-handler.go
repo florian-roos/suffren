@@ -1,11 +1,13 @@
 package node
 
 import (
-	"flatstate/internal/protocol"
+	"flatstate/internal/transport"
 )
 
-type MessageConnection interface {
-	Send(protocol.Message) error
-	Receive() (protocol.Message, error)
-	Close() error
+type DefaultMessageHandler struct{}
+
+func NewDefaultMessageHandler() *DefaultMessageHandler {
+	return &DefaultMessageHandler{}
 }
+
+func (h *DefaultMessageHandler) HandleIncomingMessage(msg transport.IncomingMessage) {}
