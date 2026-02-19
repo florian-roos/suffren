@@ -28,14 +28,16 @@ func (g *GCounter) Value() uint64 {
 	return total
 }
 
-func (g *GCounter) Join(other *GCounter) {
-	for nodeId, count := range other.counts {
+func (g *GCounter) Join(other Lattice) {
+	o := other.(*GCounter)
+	for nodeId, count := range o.counts {
 		g.counts[nodeId] = max(g.counts[nodeId], count)
 	}
 }
 
-func (g *GCounter) IsIn(other *GCounter) bool {
-	for nodeId, count := range other.counts {
+func (g *GCounter) IsIn(other Lattice) bool {
+	o := other.(*GCounter)
+	for nodeId, count := range o.counts {
 		if count < g.counts[nodeId] {
 			return false
 		}
@@ -43,10 +45,11 @@ func (g *GCounter) IsIn(other *GCounter) bool {
 	return true
 }
 
-func (g *GCounter) Bottom() GCounter {
+func (g *GCounter) Bottom() Lattice {
 	nodeIds := make([]NodeId, 0, len(g.counts))
 	for nodeId := range g.counts {
 		nodeIds = append(nodeIds, nodeId)
 	}
-	return *NewGCounter(nodeIds)
+	return NewGCounter(nodeIds)
+
 }

@@ -1,5 +1,7 @@
+package crdt
+
 type Lattice interface {
-	(*Lattice) Join(other Lattice) 
-	(*Lattice) IsIn(other Lattice) bool
-	(*Lattice) Bottom() Lattice 
+	Join(other Lattice)
+	IsIn(other Lattice) bool
+	Bottom() Lattice
 }
