@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"flatstate/internal/protocol"
-	"flatstate/internal/transport"
+	"suffren/internal/protocol"
+	"suffren/internal/transport"
 )
 
 type Network struct {

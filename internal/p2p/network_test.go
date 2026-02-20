@@ -1,8 +1,8 @@
 package p2p
 
 import (
-	"flatstate/internal/protocol"
-	"flatstate/internal/transport"
+	"suffren/internal/protocol"
+	"suffren/internal/transport"
 	"testing"
 	"time"
 )

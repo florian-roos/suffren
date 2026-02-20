@@ -1,7 +1,7 @@
 package p2p
 
 import (
-	"flatstate/internal/protocol"
+	"suffren/internal/protocol"
 	"net"
 	"testing"
 	"time"
