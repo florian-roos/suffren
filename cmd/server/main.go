@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 
-	"flatstate/internal/node"
-	"flatstate/internal/p2p"
+	"suffren/internal/node"
+	"suffren/internal/p2p"
 )
 
 func main() {

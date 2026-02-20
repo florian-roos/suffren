@@ -1,7 +1,7 @@
 package node
 
 import (
-	"flatstate/internal/transport"
+	"suffren/internal/transport"
 )
 
 type DefaultMessageHandler struct{}

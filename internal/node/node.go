@@ -1,9 +1,9 @@
 package node
 
 import (
-	"flatstate/internal/protocol"
-	"flatstate/internal/transport"
 	"log"
+	"suffren/internal/protocol"
+	"suffren/internal/transport"
 	"sync"
 )
 

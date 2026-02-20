@@ -1,6 +1,6 @@
 package transport
 
-import "flatstate/internal/protocol"
+import "suffren/internal/protocol"
 
 type IncomingMessage struct {
 	Message protocol.Message

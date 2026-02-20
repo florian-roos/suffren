@@ -2,7 +2,7 @@ package p2p
 
 import (
 	"encoding/gob"
-	"flatstate/internal/protocol"
+	"suffren/internal/protocol"
 	"net"
 )
 

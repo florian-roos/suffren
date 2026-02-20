@@ -1,8 +1,8 @@
 package p2p
 
 import (
-	"flatstate/internal/protocol"
-	"flatstate/pkg/utils"
+	"suffren/internal/protocol"
+	"suffren/pkg/utils"
 	"fmt"
 	"log"
 	"net"
