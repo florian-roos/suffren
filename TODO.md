@@ -2,11 +2,10 @@
 
 ## Phase 1: GCounter CRDT
 
-- [ ] Create `internal/crdt/gcounter.go`
-- [ ] Implement GCounter struct (map[NodeID]uint64)
-- [ ] Implement Join operation (⊔)
-- [ ] Implement LessOrEqual (⊑) for partial order
-- [ ] Write tests for lattice properties (commutativity, associativity, idempotence)
+- [x] Create `internal/crdt/gcounter.go`
+- [x] Implement GCounter struct (map[NodeID]uint64)
+- [x] Implement Join operation (⊔)
+- [x] Implement LessOrEqual (⊑) for partial order
 
 ## Phase 2: Protocol Messages
 
