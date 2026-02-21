@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"suffren/internal/crdt"
 	"suffren/internal/protocol"
 	"suffren/internal/transport"
 )
@@ -12,13 +13,15 @@ type Network struct {
 	port   string
 	server *Server
 	client *Client
+	peers  map[crdt.NodeId]string
 }
 
-func NewNetwork(port string) *Network {
+func NewNetwork(port string, peers map[crdt.NodeId]string) *Network {
 	return &Network{
 		port:   port,
 		server: NewServer(port),
 		client: NewClient(),
+		peers:  peers,
 	}
 }
 
@@ -30,7 +33,11 @@ func (n *Network) Listen() (<-chan transport.IncomingMessage, error) {
 	return msgChan, nil
 }
 
-func (n *Network) Send(addr string, msg protocol.Message) error {
+func (n *Network) Send(nodeId crdt.NodeId, msg protocol.Message) error {
+	addr, exists := n.peers[nodeId]
+	if !exists {
+		return fmt.Errorf("network: no address found for node id %s", nodeId)
+	}
 	err := n.client.Send(addr, msg)
 
 	if err != nil {

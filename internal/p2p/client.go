@@ -1,11 +1,10 @@
 package p2p
 
 import (
-	"suffren/internal/protocol"
-	"suffren/pkg/utils"
-	"fmt"
 	"log"
 	"net"
+	"suffren/internal/protocol"
+	"suffren/pkg/utils"
 	"sync"
 	"time"
 )
@@ -41,23 +40,10 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 	err := conn.Send(msg)
 
 	if err != nil {
-		log.Printf("[ERROR] Failed to send message (Message.Id: %s): %v\n", msg.Id, err)
+		log.Printf("[ERROR] Failed to send message (Message: %v): %v\n", msg, err)
 		return err
 	}
 
-	ackReceived, err := conn.Receive()
-
-	if err != nil {
-		log.Printf("[ERROR] Failed to receive ACK for message (Message.Id: %s): %v\n", msg.Id, err)
-		return err
-	}
-
-	if ackReceived.Payload.Type != protocol.CmdAck || ackReceived.Id != msg.Id {
-		log.Printf("[ERROR] Invalid ACK received: %v, %v\n", ackReceived, msg)
-		return fmt.Errorf("invalid ACK")
-	}
-
-	log.Printf("ACK received for message ID: %s\n", msg.Id)
 	return nil
 }
 

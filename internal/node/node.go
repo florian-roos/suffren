@@ -2,6 +2,7 @@ package node
 
 import (
 	"log"
+	"suffren/internal/crdt"
 	"suffren/internal/protocol"
 	"suffren/internal/transport"
 	"sync"
@@ -18,6 +19,7 @@ type MessageHandler interface {
 }
 
 type Node struct {
+	Id         crdt.NodeId
 	Port       string
 	Network    NetworkService
 	MsgHandler MessageHandler
@@ -27,6 +29,7 @@ type Node struct {
 
 func NewNode(port string, network NetworkService, msgHandler MessageHandler) *Node {
 	n := Node{
+		Id:         crdt.NodeId(port),
 		Port:       port,
 		Network:    network,
 		MsgHandler: msgHandler,
@@ -48,7 +51,7 @@ func (n *Node) Start() {
 }
 
 func (n *Node) SendCommand(cmd protocol.Command, targetAddr string) error {
-	msg := protocol.NewMessage(n.Port, cmd)
+	msg := protocol.NewMessage(n.Id, cmd)
 	err := n.Network.Send(targetAddr, msg)
 	if err != nil {
 		log.Printf("[ERROR] Node cannot send message to %s: %v\n", targetAddr, err)
@@ -62,7 +65,7 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan transport.Incomin
 	for {
 		select {
 		case <-n.done:
-			log.Printf("[NODE] Shutting down node on port %s\n", n.Port)
+			log.Printf("[NODE] Shutting down node id %s\n", n.Id)
 			return
 		default:
 			msg := <-incomingMsgChan
@@ -71,7 +74,7 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan transport.Incomin
 				defer n.wg.Done()
 				select {
 				case <-n.done:
-					log.Printf("[NODE] Stopping message handler for node on port %s\n", n.Port)
+					log.Printf("[NODE] Stopping message handler for node id %s\n", n.Id)
 					return
 				default:
 					n.MsgHandler.HandleIncomingMessage(m)

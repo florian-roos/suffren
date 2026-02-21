@@ -1,16 +1,18 @@
 package protocol
 
+import "suffren/internal/crdt"
+
 type CommandType byte
 
 const (
-	CmdPut CommandType = iota
-	CmdGet
-	CmdAck
-	CmdNack
+	Propose CommandType = iota
+	Ack
+	Nack
+	Learn
 )
 
 type Command struct {
-	Type  CommandType
-	Key   string
-	Value string
+	Type      CommandType
+	Lattice   crdt.Lattice
+	SeqNumber uint64
 }
