@@ -6,7 +6,6 @@ import (
 
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
-	"suffren/internal/transport"
 )
 
 type Network struct {
@@ -25,7 +24,7 @@ func NewNetwork(port string, peers map[crdt.NodeId]string) *Network {
 	}
 }
 
-func (n *Network) Listen() (<-chan transport.IncomingMessage, error) {
+func (n *Network) Listen() (<-chan protocol.Message, error) {
 	msgChan, err := n.server.Listen()
 	if err != nil {
 		return nil, fmt.Errorf("network: failed to start listening: %w", err)

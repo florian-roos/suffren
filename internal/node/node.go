@@ -4,18 +4,17 @@ import (
 	"log"
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
-	"suffren/internal/transport"
 	"sync"
 )
 
 type NetworkService interface {
-	Listen() (<-chan transport.IncomingMessage, error) //Start the listening on the server
-	Send(addr string, msg protocol.Message) error      //Send a message to the target address
-	Close() error                                      //Close the network service
+	Listen() (<-chan protocol.Message, error)     //Start the listening on the server
+	Send(addr string, msg protocol.Message) error //Send a message to the target address
+	Close() error                                 //Close the network service
 }
 
 type MessageHandler interface {
-	HandleIncomingMessage(msg transport.IncomingMessage)
+	HandleIncomingMessage(msg protocol.Message)
 }
 
 type Node struct {
@@ -60,7 +59,7 @@ func (n *Node) SendCommand(cmd protocol.Command, targetAddr string) error {
 	return nil
 }
 
-func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan transport.IncomingMessage) {
+func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message) {
 	defer n.wg.Done()
 	for {
 		select {
@@ -70,7 +69,7 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan transport.Incomin
 		default:
 			msg := <-incomingMsgChan
 			n.wg.Add(1)
-			go func(m transport.IncomingMessage) {
+			go func(m protocol.Message) {
 				defer n.wg.Done()
 				select {
 				case <-n.done:

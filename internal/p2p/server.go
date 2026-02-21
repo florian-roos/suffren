@@ -1,15 +1,14 @@
 package p2p
 
 import (
-	"suffren/internal/protocol"
-	"suffren/internal/transport"
 	"log"
 	"net"
+	"suffren/internal/protocol"
 	"sync"
 )
 
 const connChannelSize = 100
-const incomingMsgChanSize = 100
+const MsgChanSize = 100
 
 type Server struct {
 	port              string
@@ -33,7 +32,7 @@ func NewServer(port string) *Server {
 	return s
 }
 
-func (s *Server) Listen() (<-chan transport.IncomingMessage, error) {
+func (s *Server) Listen() (<-chan protocol.Message, error) {
 	var err error
 	s.listener, err = net.Listen("tcp", ":"+s.port)
 
@@ -43,7 +42,7 @@ func (s *Server) Listen() (<-chan transport.IncomingMessage, error) {
 	}
 
 	log.Printf("[SERVER] Listening on port %s\n", s.port)
-	msgChanel := make(chan transport.IncomingMessage, incomingMsgChanSize)
+	msgChanel := make(chan protocol.Message, MsgChanSize)
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -67,7 +66,7 @@ func (s *Server) Listen() (<-chan transport.IncomingMessage, error) {
 	return msgChanel, nil
 }
 
-func (s *Server) handleConnection(msgChanel chan transport.IncomingMessage) {
+func (s *Server) handleConnection(msgChanel chan protocol.Message) {
 	conn := <-s.connections
 
 	defer s.wg.Done()
@@ -98,12 +97,7 @@ func (s *Server) handleConnection(msgChanel chan transport.IncomingMessage) {
 		default:
 		}
 
-		msgChanel <- transport.IncomingMessage{
-			Message: msg,
-			Reply: func(msg protocol.Message) error {
-				return conn.Send(msg)
-			},
-		}
+		msgChanel <- msg
 	}
 }
 
