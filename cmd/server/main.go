@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-
 	"suffren/internal/node"
 	"suffren/internal/p2p"
 )
@@ -13,7 +12,7 @@ func main() {
 	flag.Parse()
 
 	network := p2p.NewNetwork(*port)
-	n := node.NewNode(*port, network, node.NewDefaultMessageHandler())
+	n := node.NewNode(*port, network, node.NewLAMessageHandler())
 	n.Start()
 
 	fmt.Println("Node started on port", *port)

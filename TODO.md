@@ -10,8 +10,8 @@
 ## Phase 2: Protocol Messages
 
 - [x] Define Propose, Ack, Nack, Learn in `internal/protocol/`
-- [ ] Define LA handler interface (HandlePropose, HandleAck, HandleNack, HandleLearn)
-- [ ] Route messages through existing message handler
+- [x] Define LA handler interface (HandlePropose, HandleAck, HandleNack, HandleLearn)
+- [x] Route messages through existing message handler
 
 ## Phase 3: Lattice Agreement
 
