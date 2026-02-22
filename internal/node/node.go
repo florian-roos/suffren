@@ -22,16 +22,18 @@ type Node struct {
 	Port       string
 	Network    NetworkService
 	MsgHandler MessageHandler
+	peers      map[crdt.NodeId]string
 	done       chan struct{}
 	wg         sync.WaitGroup
 }
 
-func NewNode(port string, network NetworkService, msgHandler MessageHandler) *Node {
+func NewNode(port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler) *Node {
 	n := Node{
 		Id:         crdt.NodeId(port),
 		Port:       port,
 		Network:    network,
 		MsgHandler: msgHandler,
+		peers:      peers,
 		done:       make(chan struct{}),
 	}
 
@@ -49,7 +51,7 @@ func (n *Node) Start() {
 	}
 }
 
-func (n *Node) SendCommand(cmd protocol.Command, nodeId crdt.NodeId) error {
+func (n *Node) SendTo(nodeId crdt.NodeId, cmd protocol.Command) error {
 	msg := protocol.NewMessage(n.Id, cmd)
 	err := n.Network.Send(nodeId, msg)
 	if err != nil {
@@ -57,6 +59,20 @@ func (n *Node) SendCommand(cmd protocol.Command, nodeId crdt.NodeId) error {
 		return err
 	}
 	return nil
+}
+
+func (n *Node) Broadcast(cmd protocol.Command) error {
+	var lastErr error
+	for nodeId := range n.peers {
+		if nodeId == n.Id {
+			continue
+		}
+		err := n.SendTo(nodeId, cmd)
+		if err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
 }
 
 func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message) {

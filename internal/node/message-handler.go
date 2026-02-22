@@ -2,6 +2,7 @@ package node
 
 import (
 	"log"
+	"suffren/internal/crdt"
 	"suffren/internal/protocol"
 )
 
@@ -10,6 +11,11 @@ type LAHandler interface {
 	HandleAck(msg protocol.Message)
 	HandleNack(msg protocol.Message)
 	HandleLearn(msg protocol.Message)
+}
+
+type LASender interface {
+	SendTo(nodeId crdt.NodeId, cmd protocol.Command) error
+	Broadcast(cmd protocol.Command) error
 }
 
 type LAMessageHandler struct {
