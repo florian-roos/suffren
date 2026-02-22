@@ -9,9 +9,9 @@
 
 ## Phase 2: Protocol Messages
 
-- [ ] Define ProposeMsg, AckMsg, NackMsg, LearnMsg in `internal/protocol/`
-- [ ] Add JSON serialization
-- [ ] Route messages through existing p2p handlers
+- [x] Define Propose, Ack, Nack, Learn in `internal/protocol/`
+- [x] Define LA handler interface (HandlePropose, HandleAck, HandleNack, HandleLearn)
+- [x] Route messages through existing message handler
 
 ## Phase 3: Lattice Agreement
 

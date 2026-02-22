@@ -2,34 +2,38 @@ package node
 
 import (
 	"log"
+	"suffren/internal/crdt"
 	"suffren/internal/protocol"
-	"suffren/internal/transport"
 	"sync"
 )
 
 type NetworkService interface {
-	Listen() (<-chan transport.IncomingMessage, error) //Start the listening on the server
-	Send(addr string, msg protocol.Message) error      //Send a message to the target address
-	Close() error                                      //Close the network service
+	Listen() (<-chan protocol.Message, error)            //Start the listening on the server
+	Send(nodeId crdt.NodeId, msg protocol.Message) error //Send a message to the target node
+	Close() error                                        //Close the network service
 }
 
 type MessageHandler interface {
-	HandleIncomingMessage(msg transport.IncomingMessage)
+	HandleIncomingMessage(msg protocol.Message)
 }
 
 type Node struct {
+	Id         crdt.NodeId
 	Port       string
 	Network    NetworkService
 	MsgHandler MessageHandler
+	peers      map[crdt.NodeId]string
 	done       chan struct{}
 	wg         sync.WaitGroup
 }
 
-func NewNode(port string, network NetworkService, msgHandler MessageHandler) *Node {
+func NewNode(port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler) *Node {
 	n := Node{
+		Id:         crdt.NodeId(port),
 		Port:       port,
 		Network:    network,
 		MsgHandler: msgHandler,
+		peers:      peers,
 		done:       make(chan struct{}),
 	}
 
@@ -47,31 +51,45 @@ func (n *Node) Start() {
 	}
 }
 
-func (n *Node) SendCommand(cmd protocol.Command, targetAddr string) error {
-	msg := protocol.NewMessage(n.Port, cmd)
-	err := n.Network.Send(targetAddr, msg)
+func (n *Node) SendTo(nodeId crdt.NodeId, cmd protocol.Command) error {
+	msg := protocol.NewMessage(n.Id, cmd)
+	err := n.Network.Send(nodeId, msg)
 	if err != nil {
-		log.Printf("[ERROR] Node cannot send message to %s: %v\n", targetAddr, err)
+		log.Printf("[ERROR] Node cannot send message to %s: %v\n", nodeId, err)
 		return err
 	}
 	return nil
 }
 
-func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan transport.IncomingMessage) {
+func (n *Node) Broadcast(cmd protocol.Command) error {
+	var lastErr error
+	for nodeId := range n.peers {
+		if nodeId == n.Id {
+			continue
+		}
+		err := n.SendTo(nodeId, cmd)
+		if err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
+func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message) {
 	defer n.wg.Done()
 	for {
 		select {
 		case <-n.done:
-			log.Printf("[NODE] Shutting down node on port %s\n", n.Port)
+			log.Printf("[NODE] Shutting down node id %s\n", n.Id)
 			return
 		default:
 			msg := <-incomingMsgChan
 			n.wg.Add(1)
-			go func(m transport.IncomingMessage) {
+			go func(m protocol.Message) {
 				defer n.wg.Done()
 				select {
 				case <-n.done:
-					log.Printf("[NODE] Stopping message handler for node on port %s\n", n.Port)
+					log.Printf("[NODE] Stopping message handler for node id %s\n", n.Id)
 					return
 				default:
 					n.MsgHandler.HandleIncomingMessage(m)

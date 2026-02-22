@@ -4,12 +4,12 @@ A distributed counter system built with Conflict-free Replicated Data Types (CRD
 
 ## Overview
 
-Suffren implements the Lattice Agreement algorithm for distributed counter consensus. Unlike eventual consistency through gossip, LA provides quorum-based agreement with strong termination guarantees (≤ N+1 rounds). The system uses a GCounter CRDT as its underlying lattice structure.
+Suffren implements the Lattice Agreement algorithm for distributed counter consensus. Unlike eventual consistency through gossip, LA provides quorum-based agreement with strong termination guarantees (Each proposal instance terminates in at most N+1 attempts. Every received value is eventually learnt in O(N) message delays). The system uses a GCounter CRDT as its underlying lattice structure.
 
 ### Key Features
 
 - **Quorum-based consensus**: Agreement through overlapping quorums (safety guarantee)
-- **Bounded termination**: Convergence in at most N+1 proposal rounds
+- **Bounded termination**: Convergence of a proposal instance in at most N+1 proposal rounds
 - **Lattice Agreement protocol**: PROPOSE/ACK/NACK/LEARN message flow
 - **GCounter as lattice**: Partial order with join operation (⊔)
 - **Helping mechanism**: NACK responses include accepted values for fast convergence
@@ -24,7 +24,7 @@ Suffren implements the Lattice Agreement algorithm, which provides stronger guar
 **Key Properties:**
 
 - **Quorum intersection**: Safety through overlapping acceptor sets
-- **Bounded rounds**: At most N+1 proposal attempts until convergence
+- **Bounded rounds**: Each proposal instance terminates in at most N+1 attempts. Every received value is eventually learnt in O(N) message delays.
 - **Helping mechanism**: Acceptors share their state to accelerate agreement
 - **No central coordinator**: Fully decentralized with symmetric roles
 
@@ -89,31 +89,28 @@ Quorum size: `⌊N/2⌋ + 1` (majority)
 
 ## Roadmap
 
-See [TODO.md](TODO.md) for current progress.
-
 **Phase 1: CRDT Foundation**  
 Implement GCounter with lattice operations (join, partial order). Write unit tests.
 
 **Phase 2: Protocol Messages**  
-Define PROPOSE/ACK/NACK/LEARN messages. Wire them into the existing p2p layer.
+Define PROPOSE/ACK/NACK/LEARN messages and the interface to route them. Wire them into the existing p2p layer.
 
 **Phase 3: Lattice Agreement**  
-Implement the LA protocol state machine and message handlers in the node.
+Implement the LA protocol state machine.
 
 **Phase 4: End-to-End Testing**  
-Run 3-node cluster locally. Test sequential and concurrent proposals. Verify convergence.
+Run N-node cluster locally. Test concurrent proposals to verify convergence. Measure convergence latency and number of proposal rounds under contention.
 
 ## Design Decisions
 
 ### Why Lattice Agreement over Simple Gossip?
 
-**LA provides stronger guarantees:**
+With gossip + GCounter, nodes converge eventually through random
+peer exchange. There is no defined moment where you can say that all nodes agree on the same value right now.
 
-- Bounded convergence time (≤ N+1 rounds vs unbounded)
-- Quorum-based safety (vs eventual consistency)
-- Active consensus (vs passive replication)
+LA adds a commit point: the LEARN message is the exact moment every node officially agrees. This is what makes it relevant for exemple for cache invalidation because you need to know when a key is invalidated everywhere, not just that it will be eventually.
 
-**Trade-off:** Higher message complexity (O(N²) per proposal) vs weaker consistency
+**Trade-off:** O(N²) total messages in the worst case (N proposals × N messages each) vs O(N log N) total messages for gossip, but without a guaranteed commit point.
 
 ### Why GCounter as the Lattice?
 
@@ -130,18 +127,7 @@ Run 3-node cluster locally. Test sequential and concurrent proposals. Verify con
 - Quorum calculation is fixed
 - Testing is deterministic
 
-**Future:** Can extend to dynamic membership with view changes
-
-### Why Map-based Counter?
-
-Dynamic key space: nodes can be added to lattice without recompilation. Sparse representation saves memory and network bandwidth.
-
-## Building Blocks
-
-This project leverages:
-
-- **Go** for performance and concurrency primitives
-- **Lattice theory** for mathematical correctness guarantees
+**Future:** Can extend to dynamic membership with view changes and optimization on message passing
 
 ## Project Context
 
