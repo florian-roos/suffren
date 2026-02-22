@@ -8,9 +8,9 @@ import (
 )
 
 type NetworkService interface {
-	Listen() (<-chan protocol.Message, error)     //Start the listening on the server
-	Send(addr string, msg protocol.Message) error //Send a message to the target address
-	Close() error                                 //Close the network service
+	Listen() (<-chan protocol.Message, error)            //Start the listening on the server
+	Send(nodeId crdt.NodeId, msg protocol.Message) error //Send a message to the target node
+	Close() error                                        //Close the network service
 }
 
 type MessageHandler interface {
@@ -49,11 +49,11 @@ func (n *Node) Start() {
 	}
 }
 
-func (n *Node) SendCommand(cmd protocol.Command, targetAddr string) error {
+func (n *Node) SendCommand(cmd protocol.Command, nodeId crdt.NodeId) error {
 	msg := protocol.NewMessage(n.Id, cmd)
-	err := n.Network.Send(targetAddr, msg)
+	err := n.Network.Send(nodeId, msg)
 	if err != nil {
-		log.Printf("[ERROR] Node cannot send message to %s: %v\n", targetAddr, err)
+		log.Printf("[ERROR] Node cannot send message to %s: %v\n", nodeId, err)
 		return err
 	}
 	return nil

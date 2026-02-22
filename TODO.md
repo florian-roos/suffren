@@ -9,7 +9,7 @@
 
 ## Phase 2: Protocol Messages
 
-- [ ] Define ProposeMsg, AckMsg, NackMsg, LearnMsg in `internal/protocol/`
+- [x] Define Propose, Ack, Nack, Learn in `internal/protocol/`
 - [ ] Define LA handler interface (HandlePropose, HandleAck, HandleNack, HandleLearn)
 - [ ] Route messages through existing message handler
 
