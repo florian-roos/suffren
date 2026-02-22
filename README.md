@@ -89,8 +89,6 @@ Quorum size: `⌊N/2⌋ + 1` (majority)
 
 ## Roadmap
 
-See [TODO.md](TODO.md) for current progress.
-
 **Phase 1: CRDT Foundation**  
 Implement GCounter with lattice operations (join, partial order). Write unit tests.
 
