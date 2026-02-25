@@ -13,6 +13,6 @@ const (
 
 type Command struct {
 	Type      CommandType
-	Lattice   crdt.Lattice
+	Value     crdt.Lattice
 	SeqNumber uint64
 }

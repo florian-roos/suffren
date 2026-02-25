@@ -57,7 +57,7 @@ func (p *Proposer) Propose(value crdt.Lattice) {
 		Sender: p.nodeId,
 		Payload: protocol.Command{
 			Type:      protocol.Propose,
-			Lattice:   p.bufferedValue,
+			Value:     p.bufferedValue,
 			SeqNumber: p.seqNumber,
 		},
 	}
@@ -86,7 +86,7 @@ func (p *Proposer) HandleNack(msg protocol.Message) {
 	defer p.mu.Unlock()
 	if msg.Payload.SeqNumber == p.seqNumber {
 		p.acksReceived = append(p.acksReceived, false)
-		p.bufferedValue = p.bufferedValue.Join(msg.Payload.Lattice)
+		p.bufferedValue = p.bufferedValue.Join(msg.Payload.Value)
 		p.checkAndHandleQuorum()
 	}
 }
@@ -105,7 +105,7 @@ func (p *Proposer) checkAndHandleQuorum() {
 				Sender: p.nodeId,
 				Payload: protocol.Command{
 					Type:      protocol.Learn,
-					Lattice:   p.bufferedValue,
+					Value:     p.bufferedValue,
 					SeqNumber: p.seqNumber,
 				},
 			}
@@ -127,7 +127,7 @@ func (p *Proposer) checkAndHandleQuorum() {
 			msg := protocol.Message{Sender: p.nodeId,
 				Payload: protocol.Command{
 					Type:      protocol.Propose,
-					Lattice:   p.bufferedValue,
+					Value:     p.bufferedValue,
 					SeqNumber: p.seqNumber,
 				},
 			}
