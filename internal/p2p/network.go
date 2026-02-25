@@ -46,6 +46,16 @@ func (n *Network) Send(nodeId crdt.NodeId, msg protocol.Message) error {
 	return nil
 }
 
+func (n *Network) Broadcast(msg protocol.Message) error {
+	for nodeId, addr := range n.peers {
+		err := n.Send(nodeId, msg)
+		if err != nil {
+			log.Printf("[ERROR] Failed to send message %v to %s at %s: %v\n", msg, nodeId, addr, err)
+		}
+	}
+	return nil
+}
+
 func (n *Network) Close() error {
 	log.Println("[NETWORK] Closing network service...")
 
