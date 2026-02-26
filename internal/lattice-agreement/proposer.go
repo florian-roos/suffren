@@ -7,13 +7,6 @@ import (
 	"sync"
 )
 
-// Network is the subset of the p2p layer the Proposer needs.
-type Network interface {
-	Broadcast(msg protocol.Message) error
-	BroadcastToOthers(msg protocol.Message, senderId crdt.NodeId) error
-	Send(nodeId crdt.NodeId, msg protocol.Message) error
-}
-
 // Proposer implements the proposer role of Lattice Agreement.
 // It is safe for concurrent use.
 type Proposer struct {
