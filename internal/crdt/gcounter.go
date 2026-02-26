@@ -53,6 +53,21 @@ func (g *GCounter) IsIn(other Lattice) bool {
 	return true
 }
 
+// StrictlyIsIn returns true if g ⊏ other (g is strictly less than other)
+func (g *GCounter) StrictlyIsIn(other Lattice) bool {
+	o := other.(*GCounter)
+	strictlyLess := false
+	for nodeId, count := range g.Counts {
+		if count > o.Counts[nodeId] {
+			return false
+		}
+		if count < o.Counts[nodeId] {
+			strictlyLess = true
+		}
+	}
+	return strictlyLess
+}
+
 func (g *GCounter) Bottom() Lattice {
 	nodeIds := make([]NodeId, 0, len(g.Counts))
 	for nodeId := range g.Counts {
