@@ -10,6 +10,7 @@ import (
 // Network is the subset of the p2p layer the Proposer needs.
 type Network interface {
 	Broadcast(msg protocol.Message) error
+	Send(nodeId crdt.NodeId, msg protocol.Message) error
 }
 
 // Proposer implements the proposer role of Lattice Agreement.
