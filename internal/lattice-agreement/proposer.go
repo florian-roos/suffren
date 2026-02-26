@@ -83,6 +83,9 @@ func (p *Proposer) HandleNack(msg protocol.Message) {
 		p.acksReceived = append(p.acksReceived, false)
 		p.bufferedValue = p.bufferedValue.Join(msg.Payload.Value)
 		p.checkAndHandleQuorum()
+	} else {
+		log.Printf("[Proposer:%s] NACK ignored: stale seq=%d (current=%d)",
+			p.nodeId, msg.Payload.SeqNumber, p.seqNumber)
 	}
 }
 
@@ -119,6 +122,8 @@ func (p *Proposer) checkAndHandleQuorum() {
 			p.seqNumber++
 			p.acksReceived = make([]bool, 0)
 			p.quorumReached = false
+			log.Printf("[Proposer:%s] Dirty quorum — re-proposing (seq=%d) with bufferedValue: %v",
+				p.nodeId, p.seqNumber, p.bufferedValue)
 			msg := protocol.Message{Sender: p.nodeId,
 				Payload: protocol.Command{
 					Type:      protocol.Propose,
