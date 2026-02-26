@@ -56,6 +56,20 @@ func (n *Network) Broadcast(msg protocol.Message) error {
 	return nil
 }
 
+// BroadcastToOthers broadcasts the message to all peers except the sender.
+func (n *Network) BroadcastToOthers(msg protocol.Message, senderId crdt.NodeId) error {
+	for nodeId, addr := range n.peers {
+		if nodeId == senderId {
+			continue
+		}
+		err := n.Send(nodeId, msg)
+		if err != nil {
+			log.Printf("[ERROR] Failed to send message %v to %s at %s: %v\n", msg, nodeId, addr, err)
+		}
+	}
+	return nil
+}
+
 func (n *Network) Close() error {
 	log.Println("[NETWORK] Closing network service...")
 
