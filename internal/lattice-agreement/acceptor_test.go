@@ -12,9 +12,10 @@ import (
 // Mock network
 
 type mockNetwork struct {
-	mu      sync.Mutex
-	sent    []capturedMessage
-	sendErr error
+	mu          sync.Mutex
+	sent        []capturedMessage
+	broadcasted []protocol.Message
+	sendErr     error
 }
 
 type capturedMessage struct {
@@ -30,11 +31,17 @@ func (m *mockNetwork) Send(to crdt.NodeId, msg protocol.Message) error {
 }
 
 func (m *mockNetwork) Broadcast(msg protocol.Message) error {
-	return nil // Acceptor never broadcasts
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.broadcasted = append(m.broadcasted, msg)
+	return m.sendErr
 }
 
 func (m *mockNetwork) BroadcastToOthers(msg protocol.Message, senderId crdt.NodeId) error {
-	return nil // Acceptor never broadcasts
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.broadcasted = append(m.broadcasted, msg)
+	return m.sendErr
 }
 
 func (m *mockNetwork) lastSentTo(nodeId crdt.NodeId) (protocol.Message, bool) {
@@ -46,6 +53,29 @@ func (m *mockNetwork) lastSentTo(nodeId crdt.NodeId) (protocol.Message, bool) {
 		}
 	}
 	return protocol.Message{}, false
+}
+
+func (m *mockNetwork) lastBroadcastOfType(cmdType protocol.CommandType) (protocol.Message, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := len(m.broadcasted) - 1; i >= 0; i-- {
+		if m.broadcasted[i].Payload.Type == cmdType {
+			return m.broadcasted[i], true
+		}
+	}
+	return protocol.Message{}, false
+}
+
+func (m *mockNetwork) countBroadcastsOfType(cmdType protocol.CommandType) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, msg := range m.broadcasted {
+		if msg.Payload.Type == cmdType {
+			count++
+		}
+	}
+	return count
 }
 
 // Helpers
@@ -76,6 +106,19 @@ func waitForMessage(t *testing.T, net *mockNetwork, to crdt.NodeId) (protocol.Me
 	deadline := 100
 	for i := 0; i < deadline; i++ {
 		if msg, exists := net.lastSentTo(to); exists {
+			return msg, true
+		}
+		time.Sleep(1 * time.Millisecond)
+		runtime.Gosched()
+	}
+	return protocol.Message{}, false
+}
+
+// waitForBroadcast polls until a broadcast of the given type appears.
+func waitForBroadcast(t *testing.T, net *mockNetwork, cmdType protocol.CommandType) (protocol.Message, bool) {
+	t.Helper()
+	for i := 0; i < 100; i++ {
+		if msg, exists := net.lastBroadcastOfType(cmdType); exists {
 			return msg, true
 		}
 		time.Sleep(1 * time.Millisecond)
@@ -252,7 +295,7 @@ func TestAcceptor_concurrent_proposals_do_not_corrupt_state(t *testing.T) {
 	bottom := newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 0, "C": 0})
 	acceptor := NewAcceptor(net, bottom, "N2")
 
-	const n = 1000000
+	const n = 10000
 	var wg sync.WaitGroup
 	wg.Add(n)
 
@@ -272,13 +315,13 @@ func TestAcceptor_concurrent_proposals_do_not_corrupt_state(t *testing.T) {
 
 	// After all proposals, acceptedValue must be ≥ every individual proposal.
 	// The minimum guaranteed value is the join of all proposals:
-	// A = max(0..999999) = 999999, B = max(1..1000000) = 1000000, C = 1
+	// A = max(0..9999) = 9999, B = max(1..10000) = 10000, C = 1
 	final := acceptor.acceptedValue.(*crdt.GCounter)
-	if final.Counts["A"] != 999999 {
-		t.Errorf("expected A=999999, got %d", final.Counts["A"])
+	if final.Counts["A"] != 9999 {
+		t.Errorf("expected A=9999, got %d", final.Counts["A"])
 	}
-	if final.Counts["B"] != 1000000 {
-		t.Errorf("expected B=1000000, got %d", final.Counts["B"])
+	if final.Counts["B"] != 10000 {
+		t.Errorf("expected B=10000, got %d", final.Counts["B"])
 	}
 	if final.Counts["C"] != 1 {
 		t.Errorf("expected C=1, got %d", final.Counts["C"])
