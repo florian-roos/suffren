@@ -41,6 +41,16 @@ func (g *GCounter) Join(other Lattice) Lattice {
 	return result
 }
 
+// MergeInPlace updates g to be g ⊔ other
+func (g *GCounter) MergeInPlace(other Lattice) {
+	o := other.(*GCounter)
+	for nodeId, count := range o.Counts {
+		if count > g.Counts[nodeId] {
+			g.Counts[nodeId] = count
+		}
+	}
+}
+
 // IsIn returns true if g ⊑ other (g is less than or equal to other)
 // meaning ∀k: g[k] ≤ other[k]
 func (g *GCounter) IsIn(other Lattice) bool {
