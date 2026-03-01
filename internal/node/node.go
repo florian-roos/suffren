@@ -27,9 +27,9 @@ type Node struct {
 	wg         sync.WaitGroup
 }
 
-func NewNode(port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler) *Node {
+func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler) *Node {
 	n := Node{
-		Id:         crdt.NodeId(port),
+		Id:         nodeId,
 		Port:       port,
 		Network:    network,
 		MsgHandler: msgHandler,

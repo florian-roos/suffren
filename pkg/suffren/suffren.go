@@ -15,7 +15,7 @@ type Suffren struct {
 	la           *latticeagreement.LatticeAgreement
 }
 
-func NewSuffren(port string, peers map[crdt.NodeId]string) (*Suffren, error) {
+func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) (*Suffren, error) {
 	nodeIds := make([]crdt.NodeId, len(peers))
 	for nodeId := range peers {
 		nodeIds = append(nodeIds, nodeId)
@@ -28,14 +28,14 @@ func NewSuffren(port string, peers map[crdt.NodeId]string) (*Suffren, error) {
 
 	network := p2p.NewNetwork(port, peers)
 
-	suffren.la = latticeagreement.NewLatticeAgreement(crdt.NodeId(port), peers, network, suffren.localCounter.Bottom(), func(learnedValue crdt.Lattice) {
+	suffren.la = latticeagreement.NewLatticeAgreement(nodeId, peers, network, suffren.localCounter.Bottom(), func(learnedValue crdt.Lattice) {
 		suffren.mu.Lock()
 		defer suffren.mu.Unlock()
 		suffren.localCounter.MergeInPlace(learnedValue)
 	})
 
 	messageHandler := node.NewLAMessageHandler(suffren.la)
-	suffren.node = node.NewNode(port, peers, network, messageHandler)
+	suffren.node = node.NewNode(nodeId, port, peers, network, messageHandler)
 
 	suffren.node.Start()
 
