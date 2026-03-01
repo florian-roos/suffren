@@ -13,9 +13,9 @@ type Network interface {
 
 // LatticeAgreement composes the three roles of the protocol.
 type LatticeAgreement struct {
-	Proposer  *Proposer
-	Acceptors *Acceptor
-	Learner   *Learner
+	Proposer *Proposer
+	Acceptor *Acceptor
+	Learner  *Learner
 }
 
 func NewLatticeAgreement(
@@ -26,8 +26,25 @@ func NewLatticeAgreement(
 	onLearn func(crdt.Lattice),
 ) *LatticeAgreement {
 	return &LatticeAgreement{
-		Proposer:  NewProposer(network, nodeId, bottom, peers),
-		Acceptors: NewAcceptor(network, bottom, nodeId),
-		Learner:   NewLearner(nodeId, network, bottom, onLearn),
+		Proposer: NewProposer(network, nodeId, bottom, peers),
+		Acceptor: NewAcceptor(network, bottom, nodeId),
+		Learner:  NewLearner(nodeId, network, bottom, onLearn),
 	}
+}
+
+// Forwarding the methods to implement LAHandler interface
+func (la *LatticeAgreement) HandlePropose(msg protocol.Message) {
+	la.Acceptor.HandlePropose(msg)
+}
+
+func (la *LatticeAgreement) HandleAck(msg protocol.Message) {
+	la.Proposer.HandleAck(msg)
+}
+
+func (la *LatticeAgreement) HandleNack(msg protocol.Message) {
+	la.Proposer.HandleNack(msg)
+}
+
+func (la *LatticeAgreement) HandleLearn(msg protocol.Message) {
+	la.Learner.HandleLearn(msg)
 }
