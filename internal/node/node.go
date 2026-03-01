@@ -40,14 +40,16 @@ func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, netw
 	return &n
 }
 
-func (n *Node) Start() {
+func (n *Node) Start() error {
 	incomingMsgChan, err := n.Network.Listen()
 
 	if err == nil {
 		n.wg.Add(1)
 		go n.handleIncomingMsgChannel(incomingMsgChan)
+		return nil
 	} else {
 		log.Printf("[ERROR] Node cannot listen to the network: %v\n", err)
+		return err
 	}
 }
 
@@ -82,8 +84,11 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 		case <-n.done:
 			log.Printf("[NODE] Shutting down node id %s\n", n.Id)
 			return
-		default:
-			msg := <-incomingMsgChan
+		case msg, ok := <-incomingMsgChan:
+			if !ok {
+				log.Printf("[NODE] Incoming message channel closed for node id %s\n", n.Id)
+				return
+			}
 			n.wg.Add(1)
 			go func(m protocol.Message) {
 				defer n.wg.Done()
