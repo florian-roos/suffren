@@ -92,7 +92,7 @@ func (c *routingCluster) dispatch(cn *clusterNode, msg protocol.Message) {
 	go func() {
 		switch msg.Payload.Type {
 		case protocol.Propose:
-			go cn.la.Acceptors.HandlePropose(msg)
+			go cn.la.Acceptor.HandlePropose(msg)
 		case protocol.Ack:
 			go cn.la.Proposer.HandleAck(msg)
 		case protocol.Nack:

@@ -3,8 +3,11 @@ package node
 import (
 	"log"
 	"suffren/internal/crdt"
+	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/protocol"
+
 	"sync"
+	"time"
 )
 
 type NetworkService interface {
@@ -18,36 +21,45 @@ type MessageHandler interface {
 }
 
 type Node struct {
-	Id         crdt.NodeId
-	Port       string
-	Network    NetworkService
-	MsgHandler MessageHandler
-	peers      map[crdt.NodeId]string
-	done       chan struct{}
-	wg         sync.WaitGroup
+	Id           crdt.NodeId
+	Port         string
+	Network      NetworkService
+	MsgHandler   MessageHandler
+	peers        map[crdt.NodeId]string
+	la           *latticeagreement.LatticeAgreement
+	localCounter *crdt.GCounter
+	cfg          Config
+	done         chan struct{}
+	wg           sync.WaitGroup
 }
 
-func NewNode(port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler) *Node {
+func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler, la *latticeagreement.LatticeAgreement, localCounter *crdt.GCounter, cfg Config) *Node {
 	n := Node{
-		Id:         crdt.NodeId(port),
-		Port:       port,
-		Network:    network,
-		MsgHandler: msgHandler,
-		peers:      peers,
-		done:       make(chan struct{}),
+		Id:           nodeId,
+		Port:         port,
+		Network:      network,
+		MsgHandler:   msgHandler,
+		peers:        peers,
+		la:           la,
+		localCounter: localCounter,
+		cfg:          cfg,
+		done:         make(chan struct{}),
 	}
 
 	return &n
 }
 
-func (n *Node) Start() {
+func (n *Node) Start() error {
 	incomingMsgChan, err := n.Network.Listen()
 
 	if err == nil {
-		n.wg.Add(1)
+		n.wg.Add(2)
 		go n.handleIncomingMsgChannel(incomingMsgChan)
+		go n.periodicPropose() // Periodic propose to ensure late-joining nodes can catch up
+		return nil
 	} else {
 		log.Printf("[ERROR] Node cannot listen to the network: %v\n", err)
+		return err
 	}
 }
 
@@ -82,8 +94,11 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 		case <-n.done:
 			log.Printf("[NODE] Shutting down node id %s\n", n.Id)
 			return
-		default:
-			msg := <-incomingMsgChan
+		case msg, ok := <-incomingMsgChan:
+			if !ok {
+				log.Printf("[NODE] Incoming message channel closed for node id %s\n", n.Id)
+				return
+			}
 			n.wg.Add(1)
 			go func(m protocol.Message) {
 				defer n.wg.Done()
@@ -95,6 +110,20 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 					n.MsgHandler.HandleIncomingMessage(m)
 				}
 			}(msg)
+		}
+	}
+}
+
+func (n *Node) periodicPropose() {
+	ticker := time.NewTicker(n.cfg.ProposalInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			n.la.Proposer.Propose(n.localCounter)
+		case <-n.done:
+			n.wg.Done()
+			return
 		}
 	}
 }
