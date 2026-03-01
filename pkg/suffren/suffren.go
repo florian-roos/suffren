@@ -16,7 +16,7 @@ type Suffren struct {
 }
 
 func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) (*Suffren, error) {
-	nodeIds := make([]crdt.NodeId, len(peers))
+	var nodeIds []crdt.NodeId
 	for nodeId := range peers {
 		nodeIds = append(nodeIds, nodeId)
 	}
@@ -37,7 +37,10 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) (
 	messageHandler := node.NewLAMessageHandler(suffren.la)
 	suffren.node = node.NewNode(nodeId, port, peers, network, messageHandler)
 
-	suffren.node.Start()
+	err := suffren.node.Start()
+	if err != nil {
+		return nil, err
+	}
 
 	return suffren, nil
 }
