@@ -35,7 +35,7 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) (
 	})
 
 	messageHandler := node.NewLAMessageHandler(suffren.la)
-	suffren.node = node.NewNode(nodeId, port, peers, network, messageHandler)
+	suffren.node = node.NewNode(nodeId, port, peers, network, messageHandler, suffren.la, suffren.localCounter, node.DefaultConfig())
 
 	err := suffren.node.Start()
 	if err != nil {
