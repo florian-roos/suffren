@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"errors"
+	"io"
 	"log"
 	"net"
 	"suffren/internal/protocol"
@@ -86,7 +88,11 @@ func (s *Server) handleConnection(msgChanel chan protocol.Message) {
 	for {
 		msg, err := conn.Receive()
 		if err != nil {
-			log.Printf("[ERROR] Failed to receive message: %v\n", err)
+			if errors.Is(err, io.EOF) {
+				// Peer closed the connection cleanly — not an error.
+				return
+			}
+			log.Printf("[WARN] Lost connection to peer: %v\n", err)
 			return
 		}
 
