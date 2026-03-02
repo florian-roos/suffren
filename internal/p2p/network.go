@@ -47,25 +47,19 @@ func (n *Network) Send(nodeId crdt.NodeId, msg protocol.Message) error {
 }
 
 func (n *Network) Broadcast(msg protocol.Message) error {
-	for nodeId, addr := range n.peers {
-		err := n.Send(nodeId, msg)
-		if err != nil {
-			log.Printf("[ERROR] Failed to send message %v to %s at %s: %v\n", msg, nodeId, addr, err)
-		}
+	for nodeId := range n.peers {
+		n.Send(nodeId, msg)
 	}
 	return nil
 }
 
 // BroadcastToOthers broadcasts the message to all peers except the sender.
 func (n *Network) BroadcastToOthers(msg protocol.Message, senderId crdt.NodeId) error {
-	for nodeId, addr := range n.peers {
+	for nodeId := range n.peers {
 		if nodeId == senderId {
 			continue
 		}
-		err := n.Send(nodeId, msg)
-		if err != nil {
-			log.Printf("[ERROR] Failed to send message %v to %s at %s: %v\n", msg, nodeId, addr, err)
-		}
+		n.Send(nodeId, msg)
 	}
 	return nil
 }

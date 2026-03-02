@@ -22,8 +22,9 @@ type Proposer struct {
 	acksReceived  []bool
 	// bufferedValue is the join of all values seen (own proposals + NACK payloads).
 	// It is monotonically non-decreasing and is what gets learned.
-	bufferedValue crdt.Lattice
-	seqNumber     uint64
+	bufferedValue    crdt.Lattice
+	lastLearnedValue crdt.Lattice // nil until the first LEARN is broadcast
+	seqNumber        uint64
 }
 
 func NewProposer(network Network, nodeId crdt.NodeId, initialValue crdt.Lattice, peers map[crdt.NodeId]string) *Proposer {
@@ -115,7 +116,11 @@ func (p *Proposer) checkAndHandleQuorum() {
 					log.Printf("[Proposer:%s] LEARN broadcast failed: %v", p.nodeId, err)
 				}
 			}()
-			log.Printf("[Proposer:%s] Quorum reached with all ACKs, broadcasting LEARN for value: %v\n", p.nodeId, p.bufferedValue)
+			// Only log when the learned value grows
+			if p.lastLearnedValue == nil || p.lastLearnedValue.StrictlyIsIn(p.bufferedValue) {
+				log.Printf("[Proposer:%s] New value learned: %v\n", p.nodeId, p.bufferedValue)
+				p.lastLearnedValue = p.bufferedValue
+			}
 		} else {
 			// At least one NACK: re-propose with the accumulated bufferedValue.
 			// bufferedValue already contains the join of all NACK payloads from HandleNack.
