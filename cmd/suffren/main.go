@@ -17,24 +17,27 @@ func main() {
 	}
 
 	port := os.Args[1]
-	suffren, err := suffren.NewSuffren(crdt.NodeId(port), port, peers)
-	if err != nil {
-		fmt.Printf("Error starting Suffren: %v\n", err)
-		os.Exit(1)
-	}
-	defer suffren.Stop()
+	node := suffren.NewSuffren(crdt.NodeId(port), port, peers)
 
-	fmt.Printf("Suffren node started on port %s. Commands: [i]ncrement, [v]alue, [q]uit\n", port)
+	fmt.Printf("Node %s initialized. Commands: [s]tart, [i]ncrement, [v]alue, [q]uit\n", port)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		switch scanner.Text() {
+		case "s":
+			err := node.Start()
+			if err != nil {
+				fmt.Printf("Failed to start: %v\n", err)
+				continue
+			}
+			fmt.Println("Node started and connected to cluster.")
 		case "i":
-			suffren.Increment()
-			fmt.Println("Counter incremented. Local value:", suffren.Value())
+			node.Increment()
+			fmt.Println("Incremented. Value:", node.Value())
 		case "v":
-			fmt.Println("Local value:", suffren.Value())
+			fmt.Println("Value:", node.Value())
 		case "q":
+			node.Stop()
 			return
 		}
 	}
