@@ -1,5 +1,7 @@
 package crdt
 
+import "encoding/gob"
+
 type NodeId string
 
 type GCounter struct {
@@ -84,4 +86,9 @@ func (g *GCounter) Bottom() Lattice {
 		nodeIds = append(nodeIds, nodeId)
 	}
 	return NewGCounter(nodeIds)
+}
+
+func init() {
+	// Register GCounter for gob encoding/decoding in protocol messages
+	gob.Register(&GCounter{})
 }

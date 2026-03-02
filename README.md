@@ -1,89 +1,101 @@
-# Suffren
-
-A coordinator-less, quorum-based distributed CRDT powered by Lattice Agreement.
+# Suffren: Quorum-based distributed CRDT via Lattice Agreement
 
 ## Overview
 
-Suffren implements a distributed state machine where $N$ nodes maintain a global `GCounter`. Unlike traditional consensus protocols (Paxos, Raft) that require stable leader election and sequential log replication, Suffren leverages Lattice Agreement to achieve quorum-based convergence purely through the monotonic properties of join-semilattices.
+Suffren is a replicated distributed counter on N nodes that converges without a central coordinator. Standard consensus algorithms like Paxos enforce a total order through stable leader election, which is overly restrictive for monotonic state. Conversely, gossip protocols provide eventual consistency but lack a deterministic commit barrier. Thus the system cannot mathematically guarantee when a value has fully converged.
 
-Any node can increment its local state and propose it to the cluster. When a quorum agrees, every node deterministically adopts the merged value.
+Suffren implements a Grow-Only Counter (`GCounter`) using Lattice Agreement. It trades the O(N log N) messaging overhead of gossip for an O(N^2) worst-case complexity to guarantee a strict synchronization barrier. Any node can increment its local state and propose it. When a quorum agrees, every node deterministically adopts the merged value.
 
-## The Trade-Off: Lattice Agreement vs. Gossip
+## Architecture and Role Isolation
 
-While Gossip protocols provide eventual consistency with $\mathcal{O}(N log N)$ messaging overhead, they fail to provide a deterministic commit point. You never mathematically know when a value has fully converged across the cluster.
+To guarantee consistency during concurrent updates and network partitions, each node implements three strictly isolated roles. Each role operates with independent mutexes to prevent deadlocks during concurrent network I/O.
 
-Suffren trades higher worst-case messaging complexity $\mathcal{O}(N^2)$ for a guaranteed synchronization barrier. The `LEARN` message guarantees that a strict quorum has acknowledged and merged the state. Because of quorum intersection, any future proposal is mathematically guaranteed to subsume this state.
+### 1. Proposer
 
-## Architectural Roles & State Isolation
+The proposer initiates agreement rounds. It maintains `bufferedValue`, which is the join (⊔) of all values seen during the current round.
 
-To guarantee protocol safety and prevent state corruption under high concurrent load, each node implements three strictly isolated roles. Suffren physically separates them into distinct structs with independent mutexes.
+- The proposer broadcasts `PROPOSE(bufferedValue, seqNumber)`.
+- If a quorum of `ACK`s is received, the state is committed, and it broadcasts `LEARN`.
+- If a `NACK(payload)` is received, it merges the missing state into its buffer. Since the system must work even with a partition of the network, the proposer waits for a quorum of responses, increments `seqNumber`, and re-proposes.
 
-### 1. Proposer (Optimistic Forward Progress)
+To ensure correct state for late-joining or partitioned nodes, the proposer periodically re-proposes its state.
 
-Initiates agreement rounds and drives the cluster toward convergence.
+### 2. Acceptor
 
-- **State (`bufferedValue`):** The $\sqcup$ (join) of all values seen during the current round, including its own proposals and payloads from `NACK` responses.
-- **Mechanics:** Broadcasts `PROPOSE(bufferedValue, seqNumber)`. If a quorum of `ACK`s is received, it broadcasts `LEARN`. If any `NACK` is received, it merges the `NACK` payload and whenever a quorum of responses is reached, increments the sequence number and reproposes.
-- **Safety:** `seqNumber` is strictly scoped to the current proposal epoch to safely discard stale messages from delayed network partitions.
+The acceptor guarantees the consistency of the accepted values across concurrent proposals. It maintains `acceptedValue`, the ⊔ of all accepted proposals.
+For a received `PROPOSE(v)`:
 
-### 2. Acceptor (The Consistency Gate)
+- If `acceptedValue` ⊑ v, the acceptor updates and returns `ACK`.
+- If `acceptedValue` ⋢ v, it returns `NACK(acceptedValue)`.
+  Because of the quorum intersection property, if a `LEARN` barrier is reached, any future proposal must overlap with a node that has the accepted state, forcing the proposer to adopt the higher lattice state.
 
-Guards consistency across concurrent proposals.
+### 3. Learner (Commit)
 
-- **State (`acceptedValue`):** The $\sqcup$ of all proposals this specific node has accepted. Monotonically non-decreasing.
-- **Mechanics:** On receiving `PROPOSE(v)`:
-  - If `acceptedValue` $\sqsubseteq v$, it accepts the proposal and replies `ACK`.
-  - If `acceptedValue` $\not\sqsubseteq v$, it replies `NACK(acceptedValue)` to immediately feed missing state back to the Proposer, accelerating convergence.
-
-### 3. Learner (Commit & Relay)
-
-Adopts mathematically agreed-upon values.
-
-- **State (`learnedValue`):** The last safely committed value.
-- **Mechanics:** On receiving `LEARN(v)`, if $v$ strictly dominates `learnedValue`, the node adopts it, triggers an asynchronous callback to update the client-facing `localCounter` and rebroadcasts the `LEARN` message for reliable delivery.
+The learner handles the deterministic commit. On receiving `LEARN(v)`, if v strictly dominates the node's `learnedValue`, it applies the operation locally and re-broadcasts `LEARN`. This ensures reliable delivery and prevents the system from blocking if the original proposer crashes before full dissemination.
 
 ## Formal Mathematical Model
 
-The underlying data structure is a `GCounter`, mapped to a bounded join-semilattice.
+The underlying object is a `GCounter` mapped to a bounded join-semilattice (C, ⊑, ⊔, ⊥):
 
-- **State Space:** A map of node IDs to monotonic counters.
-- **Partial Order:** $c_1 \sqsubseteq c_2 \iff \forall k, c_1[k] \leq c_2[k]$
-- **Join Operation:** $(c_1 \sqcup c_2)[k] = \max(c_1[k], c_2[k])$
-- **Bottom Element ($\bot$):** The zero-value map.
+- **State space:** C = NodeId → ℕ
+- **Partial order:** c1 ⊑ c2 ⇔ ∀k, c1[k] ≤ c2[k]
+- **Join operation:** (c1 ⊔ c2)[k] = max(c1[k], c2[k])
+- **Bottom element** ⊥: The all-zero map
 
-## Complexity Analysis
+## Complexity and Fault Tolerance
 
-Suffren's performance profile is deterministic. Complexities are defined where N is the total number of nodes in the cluster.
+### Time Complexity (Number of Propose rounds before a new value is commited)
 
-### Time Complexity (Latency)
-
-- **Best Case (Uncontended):** $\mathcal{O}(1)$ rounds. A proposal requires exactly 1 network round-trip (Broadcast PROPOSE -> wait for Quorum of ACKs) before the LEARN commit point is reached.
-- **Worst Case (Maximum Contention):** $\mathcal{O}(N)$ rounds. If multiple nodes propose concurrently, a Proposer may receive mixed ACK/NACK quorums. Because every NACK payload forces a strictly upward movement in the lattice, and there are at most N concurrent proposals, a node will reach consensus in at most N proposal rounds.
+- **Uncontended:** O(1) rounds (1 round-trip: PROPOSE → quorum of ACKs → LEARN).
+- **Maximum contention:** O(N) rounds. Each NACK forces a strictly upward lattice move.
 
 ### Message Complexity
 
-- **Single Proposal (Best Case):** O(N) messages. One PROPOSE broadcast to N nodes, returning a quorum of ACK replies, followed by one LEARN broadcast.
-- **Single Proposal (Worst Case for a single node):** $\mathcal{O}(N^2)$ messages. In a highly adversarial network schedule, a single node might be forced to repropose up to N times, discovering exactly one concurrent proposal per round. Each round generates O(N) network messages.
-- **System-Wide Avalanche (Maximum Contention):** $\mathcal{O}(N^2)$ messages. If all N nodes propose simultaneously, the system does not degrade to $\mathcal{O}(N^3)$. Due to the quorum intersection property, any two quorums share at least one Acceptor. NACK payloads act as an accelerated gossip mechanism, transmitting the join of multiple proposals at once. This causes the state space to collapse rapidly, bounding the total number of system-wide communication rounds and capping total messages at $\mathcal{O}(N^2)$.
+- **Worst case:** O(N^2). If all N nodes propose simultaneously, the system does not degrade to O(N^3) because quorum intersection ensures that NACK payloads collapse the divergent states rapidly.
 
-### Space Complexity
+### Implementation and Testing
 
-- **Memory Footprint:** O(N). The state maintained by the Proposer, Acceptor, and Learner structs (`bufferedValue`, `acceptedValue`, `learnedValue`) is a `GCounter`. A `GCounter` is a map of Node IDs to monotonic integers, bounded strictly by the number of cluster participants. The memory footprint remains flat regardless of the number of increments or protocol rounds.
+Implemented in Go 1.21+ using strictly the standard library. To verify the safety properties, the system is tested against simulated network failures. The tests can be run with the command : go test -race ./...
+
+## Getting Started
+
+### Running a local 3-node cluster
+
+Open three terminals and run each command in a separate one:
+
+```bash
+go run cmd/suffren/main.go 8001
+go run cmd/suffren/main.go 8002
+go run cmd/suffren/main.go 8003
+```
+
+### Interactive CLI
+
+```text
+s : Start the node (bind TCP port, begin protocol)
+i : Increment local counter and propose to cluster
+v : Read current observed value (wait-free)
+q : Graceful shutdown
+```
 
 ## Project Structure
 
 ```text
+cmd/
+  suffren/           # CLI — interactive 3-node demo
+
 internal/
-  crdt/              # Core Lattice interface and GCounter implementation
-  lattice-agreement/ # Isolated Proposer, Acceptor, and Learner structs
-  protocol/          # Message envelopes
-  p2p/               # TCP transport layer
+  crdt/              # Lattice interface + GCounter implementation
+  lattice-agreement/ # Proposer, Acceptor, Learner (isolated structs, independent mutexes)
+  node/              # Message dispatch, periodic proposal loop, Config
+  p2p/               # TCP transport (Server, Client, Connection)
+  protocol/          # Message and Command wire types
+
+pkg/
+  suffren/           # Public API (NewSuffren, Start, Increment, Value, Stop)
+  utils/             # Retry helper (used in tests)
 ```
 
-## Why "Suffren"?
+### Why "Suffren" ?
 
 Admiral Pierre André de Suffren commanded distributed naval fleets that operated independently yet maintained coordination. This is the exact principle behind Lattice Agreement: nodes act autonomously but converge through mathematical guarantees.
-
-## License
-
-MIT

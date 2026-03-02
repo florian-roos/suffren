@@ -115,7 +115,6 @@ func (p *Proposer) checkAndHandleQuorum() {
 					log.Printf("[Proposer:%s] LEARN broadcast failed: %v", p.nodeId, err)
 				}
 			}()
-			log.Printf("[Proposer:%s] Quorum reached with all ACKs, broadcasting LEARN for value: %v\n", p.nodeId, p.bufferedValue)
 		} else {
 			// At least one NACK: re-propose with the accumulated bufferedValue.
 			// bufferedValue already contains the join of all NACK payloads from HandleNack.

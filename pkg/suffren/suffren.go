@@ -15,7 +15,7 @@ type Suffren struct {
 	la           *latticeagreement.LatticeAgreement
 }
 
-func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) (*Suffren, error) {
+func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) *Suffren {
 	var nodeIds []crdt.NodeId
 	for nodeId := range peers {
 		nodeIds = append(nodeIds, nodeId)
@@ -37,12 +37,15 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) (
 	messageHandler := node.NewLAMessageHandler(suffren.la)
 	suffren.node = node.NewNode(nodeId, port, peers, network, messageHandler, suffren.la, suffren.localCounter, node.DefaultConfig())
 
-	err := suffren.node.Start()
-	if err != nil {
-		return nil, err
-	}
+	return suffren
+}
 
-	return suffren, nil
+func (s *Suffren) Start() error {
+	err := s.node.Start()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Increment increments the local counter and proposes the new value to the cluster.
