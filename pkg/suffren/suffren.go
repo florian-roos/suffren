@@ -53,7 +53,6 @@ func (s *Suffren) Increment() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.localCounter.Increment(s.node.Id)
-	s.la.Proposer.Propose(s.localCounter)
 }
 
 // Return the current value of the counter. Note that this function is wait-free and the value may be stale if there are ongoing proposals in the cluster.
