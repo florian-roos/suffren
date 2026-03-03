@@ -8,6 +8,6 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		ProposalInterval: 500 * time.Millisecond,
+		ProposalInterval: 50 * time.Millisecond,
 	}
 }
