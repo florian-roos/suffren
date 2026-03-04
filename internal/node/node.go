@@ -30,6 +30,7 @@ type Node struct {
 	localCounter *crdt.GCounter
 	cfg          Config
 	done         chan struct{}
+	stopOnce     sync.Once
 	wg           sync.WaitGroup
 }
 
@@ -125,7 +126,9 @@ func (n *Node) periodicPropose() {
 }
 
 func (n *Node) Stop() {
-	close(n.done)
+	n.stopOnce.Do(func() {
+		close(n.done)
+	})
 	n.wg.Wait()
 	n.Network.Close()
 }
