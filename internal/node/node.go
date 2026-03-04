@@ -73,20 +73,6 @@ func (n *Node) SendTo(nodeId crdt.NodeId, cmd protocol.Command) error {
 	return nil
 }
 
-func (n *Node) Broadcast(cmd protocol.Command) error {
-	var lastErr error
-	for nodeId := range n.peers {
-		if nodeId == n.Id {
-			continue
-		}
-		err := n.SendTo(nodeId, cmd)
-		if err != nil {
-			lastErr = err
-		}
-	}
-	return lastErr
-}
-
 func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message) {
 	defer n.wg.Done()
 	for {
