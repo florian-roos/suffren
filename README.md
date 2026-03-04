@@ -82,7 +82,7 @@ q : Graceful shutdown
 
 ```text
 cmd/
-  suffren/           # CLI — interactive 3-node demo
+  suffren/           # CLI - interactive 3-node demo
 
 internal/
   crdt/              # Lattice interface + GCounter implementation
@@ -93,7 +93,7 @@ internal/
 
 pkg/
   suffren/           # Public API (NewSuffren, Start, Increment, Value, Stop)
-  utils/             # Retry helper (used in tests)
+  utils/
 ```
 
 ### Why "Suffren" ?

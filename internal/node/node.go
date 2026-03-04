@@ -5,7 +5,7 @@ import (
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/protocol"
-
+	"suffren/pkg/utils"
 	"sync"
 	"time"
 )
@@ -30,6 +30,7 @@ type Node struct {
 	localCounter *crdt.GCounter
 	cfg          Config
 	done         chan struct{}
+	stopOnce     sync.Once
 	wg           sync.WaitGroup
 }
 
@@ -73,20 +74,6 @@ func (n *Node) SendTo(nodeId crdt.NodeId, cmd protocol.Command) error {
 	return nil
 }
 
-func (n *Node) Broadcast(cmd protocol.Command) error {
-	var lastErr error
-	for nodeId := range n.peers {
-		if nodeId == n.Id {
-			continue
-		}
-		err := n.SendTo(nodeId, cmd)
-		if err != nil {
-			lastErr = err
-		}
-	}
-	return lastErr
-}
-
 func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message) {
 	defer n.wg.Done()
 	for {
@@ -115,21 +102,34 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 }
 
 func (n *Node) periodicPropose() {
+	defer n.wg.Done()
 	ticker := time.NewTicker(n.cfg.ProposalInterval)
 	defer ticker.Stop()
 	for {
+		jitteredTimeout := n.cfg.RoundTimeout + utils.Jitter(n.cfg.RoundTimeout)
 		select {
-		case <-ticker.C:
-			n.la.Proposer.Propose(n.localCounter)
+
 		case <-n.done:
-			n.wg.Done()
 			return
+		case <-ticker.C:
+			switch {
+			case n.la.Proposer.IsRoundStuck(jitteredTimeout):
+				log.Printf("[INFO] Round timed out after %v. Reproposing", jitteredTimeout)
+				n.la.Proposer.Propose(n.localCounter)
+			case n.la.Proposer.IsRoundInFlight(n.cfg.RoundTimeout):
+				// Round is healthy for now
+			default:
+				// No round in flight, normal periodic propose
+				n.la.Proposer.Propose(n.localCounter)
+			}
 		}
 	}
 }
 
 func (n *Node) Stop() {
-	close(n.done)
+	n.stopOnce.Do(func() {
+		close(n.done)
+	})
 	n.wg.Wait()
 	n.Network.Close()
 }
