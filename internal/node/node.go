@@ -102,11 +102,15 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 }
 
 func (n *Node) periodicPropose() {
+	defer n.wg.Done()
 	ticker := time.NewTicker(n.cfg.ProposalInterval)
 	defer ticker.Stop()
 	for {
 		jitteredTimeout := n.cfg.RoundTimeout + utils.Jitter(n.cfg.RoundTimeout)
 		select {
+
+		case <-n.done:
+			return
 		case <-ticker.C:
 			switch {
 			case n.la.Proposer.IsRoundStuck(jitteredTimeout):
@@ -118,9 +122,6 @@ func (n *Node) periodicPropose() {
 				// No round in flight, normal periodic propose
 				n.la.Proposer.Propose(n.localCounter)
 			}
-		case <-n.done:
-			n.wg.Done()
-			return
 		}
 	}
 }
