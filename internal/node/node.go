@@ -5,7 +5,7 @@ import (
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/protocol"
-
+	"suffren/pkg/utils"
 	"sync"
 	"time"
 )
@@ -118,9 +118,19 @@ func (n *Node) periodicPropose() {
 	ticker := time.NewTicker(n.cfg.ProposalInterval)
 	defer ticker.Stop()
 	for {
+		jitteredTimeout := n.cfg.RoundTimeout + utils.Jitter(n.cfg.RoundTimeout)
 		select {
 		case <-ticker.C:
-			n.la.Proposer.Propose(n.localCounter)
+			switch {
+			case n.la.Proposer.IsRoundStuck(jitteredTimeout):
+				log.Printf("[INFO] Round timed out after %v. Reproposing", jitteredTimeout)
+				n.la.Proposer.Propose(n.localCounter)
+			case n.la.Proposer.IsRoundInFlight(n.cfg.RoundTimeout):
+				// Round is healthy for now
+			default:
+				// No round in flight, normal periodic propose
+				n.la.Proposer.Propose(n.localCounter)
+			}
 		case <-n.done:
 			n.wg.Done()
 			return

@@ -2,9 +2,11 @@ package latticeagreement
 
 import (
 	"log"
+	"sync"
+	"time"
+
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
-	"sync"
 )
 
 // Proposer implements the proposer role of Lattice Agreement.
@@ -20,22 +22,25 @@ type Proposer struct {
 	// quorumReached gates checkAndHandleQuorum to fire exactly once per round.
 	quorumReached bool
 	acksReceived  []bool
-	// bufferedValue is the join of all values seen (own proposals + NACK payloads).
-	// It is monotonically non-decreasing and is what gets learned.
-	bufferedValue crdt.Lattice
-	seqNumber     uint64
+	IsProposing   bool // true if currently in a proposal round
+
+	bufferedValue  crdt.Lattice
+	seqNumber      uint64
+	roundStartedAt time.Time // zero if no round in flight
 }
 
 func NewProposer(network Network, nodeId crdt.NodeId, initialValue crdt.Lattice, peers map[crdt.NodeId]string) *Proposer {
 	return &Proposer{
-		network:       network,
-		nodeId:        nodeId,
-		peers:         peers,
-		quorumSize:    len(peers)/2 + 1,
-		quorumReached: false,
-		acksReceived:  make([]bool, 0),
-		bufferedValue: initialValue,
-		seqNumber:     0,
+		network:        network,
+		nodeId:         nodeId,
+		peers:          peers,
+		quorumSize:     len(peers)/2 + 1,
+		quorumReached:  false,
+		acksReceived:   make([]bool, 0),
+		bufferedValue:  initialValue,
+		seqNumber:      0,
+		roundStartedAt: time.Time{}, // zero: no round in flight
+		IsProposing:    false,
 	}
 }
 
@@ -44,10 +49,14 @@ func NewProposer(network Network, nodeId crdt.NodeId, initialValue crdt.Lattice,
 func (p *Proposer) Propose(value crdt.Lattice) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	p.roundStartedAt = time.Now() // ← track when this round started
+	p.IsProposing = true
 	p.quorumReached = false
 	p.seqNumber++
 	p.acksReceived = make([]bool, 0)
 	p.bufferedValue = p.bufferedValue.Join(value)
+
 	msg := protocol.Message{
 		Sender: p.nodeId,
 		Payload: protocol.Command{
@@ -99,6 +108,9 @@ func (p *Proposer) checkAndHandleQuorum() {
 	if len(p.acksReceived) >= p.quorumSize {
 		p.quorumReached = true
 		if noNacks(p.acksReceived) {
+			p.IsProposing = false
+			p.roundStartedAt = time.Time{} // zero
+
 			msg := protocol.Message{
 				Sender: p.nodeId,
 				Payload: protocol.Command{
@@ -121,6 +133,7 @@ func (p *Proposer) checkAndHandleQuorum() {
 			p.seqNumber++
 			p.acksReceived = make([]bool, 0)
 			p.quorumReached = false
+			p.IsProposing = true
 			log.Printf("[Proposer:%s] Dirty quorum — re-proposing (seq=%d) with bufferedValue: %v",
 				p.nodeId, p.seqNumber, p.bufferedValue)
 			msg := protocol.Message{Sender: p.nodeId,
@@ -148,4 +161,28 @@ func noNacks(acks []bool) bool {
 		}
 	}
 	return true
+}
+
+// IsRoundStuck returns true if a round has been in flight longer than timeout.
+func (p *Proposer) IsRoundStuck(timeout time.Duration) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.roundStartedAt.IsZero() {
+		return false // no round in flight
+	}
+	if !p.IsProposing && time.Since(p.roundStartedAt) <= timeout {
+		return false // round completed cleanly
+	}
+	return time.Since(p.roundStartedAt) > timeout
+}
+
+// IsRoundInFlight returns true if a round is currently proposing
+// and has not yet timed out.
+func (p *Proposer) IsRoundInFlight(timeout time.Duration) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.roundStartedAt.IsZero() || p.IsProposing == false {
+		return false
+	}
+	return time.Since(p.roundStartedAt) <= timeout
 }
