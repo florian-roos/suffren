@@ -412,3 +412,42 @@ func TestNode_wg_counter_never_negative(t *testing.T) {
 		t.Fatalf("Stop() hung — likely a wg.Add/Done mismatch, sent %d messages", sent.Load())
 	}
 }
+
+func TestNode_stop_stops_periodic_propose(t *testing.T) {
+	// GIVEN: a started node
+	// WHEN:  Stop() is called and returns
+	// THEN:  no more proposals are sent after Stop() returns
+
+	cfg := DefaultConfig()
+	cfg.ProposalInterval = 50 * time.Millisecond
+	cfg.RoundTimeout = 100 * time.Millisecond
+
+	n, net, _ := newTestNode(t, cfg)
+	if err := n.Start(); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+
+	// Let a few timeouts
+	time.Sleep(3 * cfg.RoundTimeout)
+
+	n.Stop()
+
+	// Snapshot message count immediately after Stop() returns
+	net.mu.Lock()
+	countAfterStop := len(net.messages)
+	net.mu.Unlock()
+
+	// Wait 5 more intervals (if periodicPropose is still running, more messages will appear)
+	time.Sleep(5 * cfg.RoundTimeout)
+
+	net.mu.Lock()
+	countAfterWait := len(net.messages)
+	net.mu.Unlock()
+
+	if countAfterWait > countAfterStop {
+		t.Fatalf(
+			"periodicPropose kept running after Stop() returned: %d messages before wait, %d after",
+			countAfterStop, countAfterWait,
+		)
+	}
+}
