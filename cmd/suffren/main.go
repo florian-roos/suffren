@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"suffren/internal/crdt"
+	"suffren/pkg/config"
 	"suffren/pkg/suffren"
 )
 
@@ -17,7 +18,7 @@ func main() {
 	}
 
 	port := os.Args[1]
-	node := suffren.NewSuffren(crdt.NodeId(port), port, peers)
+	node := suffren.NewSuffren(crdt.NodeId(port), port, peers, config.DefaultConfig())
 
 	fmt.Printf("Node %s initialized. Commands: [s]tart, [i]ncrement, [v]alue, [q]uit\n", port)
 
