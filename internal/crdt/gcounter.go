@@ -80,6 +80,15 @@ func (g *GCounter) StrictlyIsIn(other Lattice) bool {
 	return strictlyLess
 }
 
+// Copy returns a deep copy of g with no shared memory.
+func (g *GCounter) Copy() *GCounter {
+	result := NewGCounter([]NodeId{})
+	for nodeId, count := range g.Counts {
+		result.Counts[nodeId] = count
+	}
+	return result
+}
+
 func (g *GCounter) Bottom() Lattice {
 	nodeIds := make([]NodeId, 0, len(g.Counts))
 	for nodeId := range g.Counts {

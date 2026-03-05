@@ -5,6 +5,7 @@ import (
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/node"
 	"suffren/internal/p2p"
+	"suffren/pkg/config"
 	"sync"
 )
 
@@ -15,7 +16,7 @@ type Suffren struct {
 	la           *latticeagreement.LatticeAgreement
 }
 
-func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) *Suffren {
+func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, config *config.Config) *Suffren {
 	var nodeIds []crdt.NodeId
 	for nodeId := range peers {
 		nodeIds = append(nodeIds, nodeId)
@@ -32,10 +33,15 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string) *
 		suffren.mu.Lock()
 		defer suffren.mu.Unlock()
 		suffren.localCounter.MergeInPlace(learnedValue)
-	})
+	}, &config.LatticeAgreement)
 
-	messageHandler := node.NewLAMessageHandler(suffren.la)
-	suffren.node = node.NewNode(nodeId, port, peers, network, messageHandler, suffren.la, suffren.localCounter, node.DefaultConfig())
+	suffren.node = node.NewNode(nodeId, port, peers, network, suffren.la, func() crdt.Lattice {
+		// A RLock snapshot avoids a data race between periodicPropose (reader)
+		// and the learn callback (writer), both of which access localCounter.
+		suffren.mu.RLock()
+		defer suffren.mu.RUnlock()
+		return suffren.localCounter.Copy()
+	}, config)
 
 	return suffren
 }
