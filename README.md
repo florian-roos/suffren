@@ -86,14 +86,15 @@ cmd/
 
 internal/
   crdt/              # Lattice interface + GCounter implementation
-  lattice-agreement/ # Proposer, Acceptor, Learner (isolated structs, independent mutexes)
-  node/              # Message dispatch, periodic proposal loop, Config
+  lattice-agreement/ # Proposer, Acceptor, Learner, and MessageRouter (one actor per role mailbox model)
+  node/              # Start/Stop, periodic proposal, round-timeout
   p2p/               # TCP transport (Server, Client, Connection)
   protocol/          # Message and Command wire types
 
 pkg/
+  config/            # Configuration values and Default config
   suffren/           # Public API (NewSuffren, Start, Increment, Value, Stop)
-  utils/
+  utils/             # Jitter, Retry
 ```
 
 ### Why "Suffren" ?
