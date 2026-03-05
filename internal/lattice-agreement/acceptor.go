@@ -27,6 +27,9 @@ func NewAcceptor(network Network, bottom crdt.Lattice, nodeId crdt.NodeId) *Acce
 }
 
 func (a *Acceptor) HandlePropose(msg protocol.Message) {
+	if msg.Payload.Value == nil {
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.acceptedValue.IsIn(msg.Payload.Value) {
