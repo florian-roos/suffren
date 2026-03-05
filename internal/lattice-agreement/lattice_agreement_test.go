@@ -10,6 +10,7 @@ package latticeagreement
 import (
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
+	"suffren/pkg/config"
 	"sync"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func newCluster(nodeIds []crdt.NodeId) *routingCluster {
 			} else {
 				cn.learned = cn.learned.Join(v)
 			}
-		})
+		}, &config.DefaultConfig().LatticeAgreement)
 		c.nodes[nodeId] = cn
 	}
 	return c
