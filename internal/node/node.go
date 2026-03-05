@@ -5,6 +5,7 @@ import (
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/protocol"
+	"suffren/pkg/config"
 	"suffren/pkg/utils"
 	"sync"
 	"time"
@@ -16,35 +17,29 @@ type NetworkService interface {
 	Close() error                                        //Close the network service
 }
 
-type MessageHandler interface {
-	HandleIncomingMessage(msg protocol.Message)
-}
-
 type Node struct {
-	Id           crdt.NodeId
-	Port         string
-	Network      NetworkService
-	MsgHandler   MessageHandler
-	peers        map[crdt.NodeId]string
-	la           *latticeagreement.LatticeAgreement
-	localCounter *crdt.GCounter
-	cfg          Config
-	done         chan struct{}
-	stopOnce     sync.Once
-	wg           sync.WaitGroup
+	Id            crdt.NodeId
+	Port          string
+	Network       NetworkService
+	peers         map[crdt.NodeId]string
+	la            *latticeagreement.LatticeAgreement
+	getLocalValue func() crdt.Lattice // snapshot of local value to ensure thread safety.
+	cfg           *config.Config
+	done          chan struct{}
+	stopOnce      sync.Once
+	wg            sync.WaitGroup
 }
 
-func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, msgHandler MessageHandler, la *latticeagreement.LatticeAgreement, localCounter *crdt.GCounter, cfg Config) *Node {
+func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, la *latticeagreement.LatticeAgreement, getLocalValue func() crdt.Lattice, cfg *config.Config) *Node {
 	n := Node{
-		Id:           nodeId,
-		Port:         port,
-		Network:      network,
-		MsgHandler:   msgHandler,
-		peers:        peers,
-		la:           la,
-		localCounter: localCounter,
-		cfg:          cfg,
-		done:         make(chan struct{}),
+		Id:            nodeId,
+		Port:          port,
+		Network:       network,
+		peers:         peers,
+		la:            la,
+		getLocalValue: getLocalValue,
+		cfg:           cfg,
+		done:          make(chan struct{}),
 	}
 
 	return &n
@@ -54,6 +49,7 @@ func (n *Node) Start() error {
 	incomingMsgChan, err := n.Network.Listen()
 
 	if err == nil {
+		n.la.Start()
 		n.wg.Add(2)
 		go n.handleIncomingMsgChannel(incomingMsgChan)
 		go n.periodicPropose() // Periodic propose to ensure late-joining nodes can catch up
@@ -94,7 +90,7 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 					log.Printf("[NODE] Stopping message handler for node id %s\n", n.Id)
 					return
 				default:
-					n.MsgHandler.HandleIncomingMessage(m)
+					n.la.MessageRouter.HandleIncomingMessage(m)
 				}
 			}(msg)
 		}
@@ -103,10 +99,10 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 
 func (n *Node) periodicPropose() {
 	defer n.wg.Done()
-	ticker := time.NewTicker(n.cfg.ProposalInterval)
+	ticker := time.NewTicker(n.cfg.Node.ProposalInterval)
 	defer ticker.Stop()
 	for {
-		jitteredTimeout := n.cfg.RoundTimeout + utils.Jitter(n.cfg.RoundTimeout)
+		jitteredTimeout := n.cfg.Node.RoundTimeout + utils.Jitter(n.cfg.Node.RoundTimeout)
 		select {
 
 		case <-n.done:
@@ -115,12 +111,12 @@ func (n *Node) periodicPropose() {
 			switch {
 			case n.la.Proposer.IsRoundStuck(jitteredTimeout):
 				log.Printf("[INFO] Round timed out after %v. Reproposing", jitteredTimeout)
-				n.la.Proposer.Propose(n.localCounter)
-			case n.la.Proposer.IsRoundInFlight(n.cfg.RoundTimeout):
+				n.la.Proposer.Propose(n.getLocalValue())
+			case n.la.Proposer.IsRoundInFlight(n.cfg.Node.RoundTimeout):
 				// Round is healthy for now
 			default:
 				// No round in flight, normal periodic propose
-				n.la.Proposer.Propose(n.localCounter)
+				n.la.Proposer.Propose(n.getLocalValue())
 			}
 		}
 	}
@@ -131,5 +127,6 @@ func (n *Node) Stop() {
 		close(n.done)
 	})
 	n.wg.Wait()
+	n.la.Stop()
 	n.Network.Close()
 }

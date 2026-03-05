@@ -4,6 +4,7 @@ import (
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/protocol"
+	"suffren/pkg/config"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -61,28 +62,9 @@ func (m *mockNetwork) BroadcastToOthers(msg protocol.Message, senderId crdt.Node
 
 func (m *mockNetwork) Close() error { return nil }
 
-// Mock Message Handler
-
-type mockHandler struct {
-	mu       sync.Mutex
-	received []protocol.Message
-}
-
-func (h *mockHandler) HandleIncomingMessage(msg protocol.Message) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.received = append(h.received, msg)
-}
-
 // Helpers
 
-func (h *mockHandler) count() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.received)
-}
-
-func newTestNode(t *testing.T, cfg Config) (*Node, *mockNetwork, *mockHandler) {
+func newTestNode(t *testing.T, cfg *config.Config) (*Node, *mockNetwork) {
 	t.Helper()
 	peers := map[crdt.NodeId]string{
 		"N1": "localhost:8001",
@@ -91,94 +73,20 @@ func newTestNode(t *testing.T, cfg Config) (*Node, *mockNetwork, *mockHandler) {
 	}
 	bottom := &crdt.GCounter{Counts: map[crdt.NodeId]uint64{"N1": 0, "N2": 0, "N3": 0}}
 	net := newMockNetwork(peers)
-	handler := &mockHandler{}
-	la := latticeagreement.NewLatticeAgreement("N1", peers, net, bottom, func(crdt.Lattice) {})
+	la := latticeagreement.NewLatticeAgreement("N1", peers, net, bottom, func(crdt.Lattice) {}, &cfg.LatticeAgreement)
 
-	n := NewNode("N1", "8001", peers, net, handler, la, bottom, cfg)
-	return n, net, handler
+	n := NewNode("N1", "8001", peers, net, la, func() crdt.Lattice { return bottom }, cfg)
+	return n, net
 }
 
 // Tests
-
-func TestNode_routes_incoming_messages_to_handler(t *testing.T) {
-	// GIVEN: a started node
-	// WHEN:  a message arrives on the network channel
-	// THEN:  the handler receives it
-
-	n, net, handler := newTestNode(t, DefaultConfig())
-	if err := n.Start(); err != nil {
-		t.Fatalf("Start() failed: %v", err)
-	}
-	defer n.Stop()
-
-	net.listenCh <- protocol.Message{
-		Sender:  "N2",
-		Payload: protocol.Command{Type: protocol.Propose},
-	}
-
-	// Poll until the handler receives the message
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if handler.count() == 1 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("handler did not receive the message within 500ms")
-}
-
-func TestNode_routes_multiple_messages_concurrently(t *testing.T) {
-	// GIVEN: a started node
-	// WHEN:  200 messages arrive rapidly
-	// THEN:  all 200 are handled
-
-	n, net, handler := newTestNode(t, DefaultConfig())
-	if err := n.Start(); err != nil {
-		t.Fatalf("Start() failed: %v", err)
-	}
-	defer n.Stop()
-
-	const count = 100
-	msg := protocol.Message{
-		Sender:  "N2",
-		Payload: protocol.Command{Type: protocol.Propose},
-	}
-	go func() {
-		for i := 0; i < count; i++ {
-			select {
-			case net.listenCh <- msg:
-			default:
-			}
-			time.Sleep(1 * time.Millisecond)
-		}
-	}()
-
-	go func() {
-		for i := 0; i < count; i++ {
-			select {
-			case net.listenCh <- msg:
-			default:
-			}
-			time.Sleep(1 * time.Millisecond)
-		}
-	}()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if handler.count() == count*2 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("expected %d messages handled, got %d", count*2, handler.count())
-}
 
 func TestNode_stop_waits_for_goroutines(t *testing.T) {
 	// GIVEN: a started node
 	// WHEN:  Stop() is called
 	// THEN:  it returns only after all goroutines have exited
 
-	n, _, _ := newTestNode(t, DefaultConfig())
+	n, _ := newTestNode(t, config.DefaultConfig())
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
@@ -202,18 +110,18 @@ func TestNode_periodic_propose_fires(t *testing.T) {
 	// WHEN:  the node runs for 3 intervals
 	// THEN:  at least one proposal is broadcast to peers
 
-	cfg := DefaultConfig()
-	cfg.ProposalInterval = 50 * time.Millisecond
-	cfg.RoundTimeout = 200 * time.Millisecond
+	cfg := config.DefaultConfig()
+	cfg.Node.ProposalInterval = 50 * time.Millisecond
+	cfg.Node.RoundTimeout = 200 * time.Millisecond
 
-	n, net, _ := newTestNode(t, cfg)
+	n, net := newTestNode(t, cfg)
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 	defer n.Stop()
 
 	// Wait for 3 intervals
-	time.Sleep(3 * cfg.ProposalInterval)
+	time.Sleep(3 * cfg.Node.ProposalInterval)
 
 	net.mu.Lock()
 	count := len(net.messages)
@@ -229,18 +137,18 @@ func TestNode_periodic_propose_skips_when_round_in_flight(t *testing.T) {
 	// WHEN:  the periodic ticker fires multiple times
 	// THEN:  no new proposal is sent
 
-	cfg := DefaultConfig()
-	cfg.ProposalInterval = 50 * time.Millisecond
-	cfg.RoundTimeout = 10 * time.Second // long timeout to ensure round is in flight for the test duration
+	cfg := config.DefaultConfig()
+	cfg.Node.ProposalInterval = 50 * time.Millisecond
+	cfg.Node.RoundTimeout = 10 * time.Second // long timeout to ensure round is in flight for the test duration
 
-	n, net, _ := newTestNode(t, cfg)
+	n, net := newTestNode(t, cfg)
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 	defer n.Stop()
 
 	// Wait for the first proposal to be sent
-	time.Sleep(2 * cfg.ProposalInterval)
+	time.Sleep(2 * cfg.Node.ProposalInterval)
 
 	net.mu.Lock()
 	firstCount := len(net.messages)
@@ -251,7 +159,7 @@ func TestNode_periodic_propose_skips_when_round_in_flight(t *testing.T) {
 	}
 
 	// Wait for 5 more ticks — round is in flight, no new proposals expected
-	time.Sleep(5 * cfg.ProposalInterval)
+	time.Sleep(5 * cfg.Node.ProposalInterval)
 
 	net.mu.Lock()
 	finalCount := len(net.messages)
@@ -267,18 +175,18 @@ func TestNode_periodic_propose_reproposals_when_stuck(t *testing.T) {
 	// WHEN:  a round is in flight and times out
 	// THEN:  a new proposal is sent (the stuck round is abandoned)
 
-	cfg := DefaultConfig()
-	cfg.ProposalInterval = 50 * time.Millisecond
-	cfg.RoundTimeout = 70 * time.Millisecond // shorter than realistic
+	cfg := config.DefaultConfig()
+	cfg.Node.ProposalInterval = 50 * time.Millisecond
+	cfg.Node.RoundTimeout = 70 * time.Millisecond // shorter than realistic
 
-	n, net, _ := newTestNode(t, cfg)
+	n, net := newTestNode(t, cfg)
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 	defer n.Stop()
 
 	// Wait for initial proposal + timeout + re-proposal
-	time.Sleep(5 * cfg.ProposalInterval)
+	time.Sleep(5 * cfg.Node.ProposalInterval)
 
 	net.mu.Lock()
 	count := len(net.messages)
@@ -292,26 +200,40 @@ func TestNode_periodic_propose_reproposals_when_stuck(t *testing.T) {
 
 func TestNode_no_message_handled_after_stop(t *testing.T) {
 	// GIVEN: a stopped node
-	// WHEN:  a message arrives on the channel after Stop()
-	// THEN:  the handler does not receive it
+	// WHEN:  a PROPOSE message arrives after Stop()
+	// THEN:  no ACK is produced
 
-	n, net, handler := newTestNode(t, DefaultConfig())
+	n, net := newTestNode(t, config.DefaultConfig())
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 	n.Stop()
 
-	// Send a message after Stop()
+	// Record how many messages were sent before the test stimulus
+	net.mu.Lock()
+	baseline := len(net.messages)
+	net.mu.Unlock()
+
+	// Send a PROPOSE after Stop() — the Acceptor actor should be dead
 	select {
-	case net.listenCh <- protocol.Message{Sender: "N2"}:
+	case net.listenCh <- protocol.Message{
+		Sender: "N2",
+		Payload: protocol.Command{
+			Type:  protocol.Propose,
+			Value: &crdt.GCounter{Counts: map[crdt.NodeId]uint64{"N1": 0, "N2": 0, "N3": 0}},
+		},
+	}:
 	default:
-		// Channel might be full or closed, that's fine
 	}
 
 	time.Sleep(100 * time.Millisecond)
 
-	if handler.count() > 0 {
-		t.Fatal("handler received a message after Stop()")
+	net.mu.Lock()
+	got := len(net.messages)
+	net.mu.Unlock()
+
+	if got > baseline {
+		t.Fatalf("expected no ACK after Stop(), got %d new message(s)", got-baseline)
 	}
 }
 
@@ -320,7 +242,7 @@ func TestNode_stop_is_idempotent(t *testing.T) {
 	// WHEN:  Stop() is called twice
 	// THEN:  no panic
 
-	n, _, _ := newTestNode(t, DefaultConfig())
+	n, _ := newTestNode(t, config.DefaultConfig())
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
@@ -340,7 +262,7 @@ func TestNode_concurrent_stop_and_message(t *testing.T) {
 	// WHEN:  Stop() and message delivery happen concurrently
 	// THEN:  no data race, no panic
 
-	n, net, _ := newTestNode(t, DefaultConfig())
+	n, net := newTestNode(t, config.DefaultConfig())
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
@@ -348,7 +270,13 @@ func TestNode_concurrent_stop_and_message(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Flood with messages
-	msg := protocol.Message{Sender: "N2"}
+	msg := protocol.Message{
+		Sender: "N2",
+		Payload: protocol.Command{
+			Type:  protocol.Propose,
+			Value: &crdt.GCounter{Counts: map[crdt.NodeId]uint64{"N1": 0, "N2": 0, "N3": 0}},
+		},
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -377,16 +305,22 @@ func TestNode_wg_counter_never_negative(t *testing.T) {
 	// WHEN:  Stop() is called while messages are in flight
 	// THEN:  wg.Wait() returns cleanly
 
-	cfg := DefaultConfig()
-	cfg.ProposalInterval = 20 * time.Millisecond
+	cfg := config.DefaultConfig()
+	cfg.Node.ProposalInterval = 20 * time.Millisecond
 
-	n, net, _ := newTestNode(t, cfg)
+	n, net := newTestNode(t, cfg)
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 
 	var sent atomic.Int64
-	msg := protocol.Message{Sender: "N2"}
+	msg := protocol.Message{
+		Sender: "N2",
+		Payload: protocol.Command{
+			Type:  protocol.Propose,
+			Value: &crdt.GCounter{Counts: map[crdt.NodeId]uint64{"N1": 0, "N2": 0, "N3": 0}},
+		},
+	}
 	go func() {
 		for i := 0; i < 200; i++ {
 			select {
@@ -418,17 +352,17 @@ func TestNode_stop_stops_periodic_propose(t *testing.T) {
 	// WHEN:  Stop() is called and returns
 	// THEN:  no more proposals are sent after Stop() returns
 
-	cfg := DefaultConfig()
-	cfg.ProposalInterval = 50 * time.Millisecond
-	cfg.RoundTimeout = 100 * time.Millisecond
+	cfg := config.DefaultConfig()
+	cfg.Node.ProposalInterval = 50 * time.Millisecond
+	cfg.Node.RoundTimeout = 100 * time.Millisecond
 
-	n, net, _ := newTestNode(t, cfg)
+	n, net := newTestNode(t, cfg)
 	if err := n.Start(); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 
 	// Let a few timeouts
-	time.Sleep(3 * cfg.RoundTimeout)
+	time.Sleep(3 * cfg.Node.RoundTimeout)
 
 	n.Stop()
 
@@ -438,7 +372,7 @@ func TestNode_stop_stops_periodic_propose(t *testing.T) {
 	net.mu.Unlock()
 
 	// Wait 5 more intervals (if periodicPropose is still running, more messages will appear)
-	time.Sleep(5 * cfg.RoundTimeout)
+	time.Sleep(5 * cfg.Node.RoundTimeout)
 
 	net.mu.Lock()
 	countAfterWait := len(net.messages)

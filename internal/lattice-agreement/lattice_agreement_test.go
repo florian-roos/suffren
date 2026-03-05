@@ -10,6 +10,7 @@ package latticeagreement
 import (
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
+	"suffren/pkg/config"
 	"sync"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ type routingCluster struct {
 	nodes map[crdt.NodeId]*clusterNode
 }
 
-func newCluster(nodeIds []crdt.NodeId) *routingCluster {
+func newCluster(t *testing.T, nodeIds []crdt.NodeId) *routingCluster {
 	peers := make(map[crdt.NodeId]string)
 	for _, id := range nodeIds {
 		peers[id] = "" // address unused in in-memory routing
@@ -50,7 +51,9 @@ func newCluster(nodeIds []crdt.NodeId) *routingCluster {
 			} else {
 				cn.learned = cn.learned.Join(v)
 			}
-		})
+		}, &config.DefaultConfig().LatticeAgreement)
+		cn.la.Start()
+		t.Cleanup(cn.la.Stop)
 		c.nodes[nodeId] = cn
 	}
 	return c
@@ -87,20 +90,9 @@ func (n *clusterNetwork) Send(nodeId crdt.NodeId, msg protocol.Message) error {
 	return nil
 }
 
-// dispatch routes a message to the right LA component based on its type.
+// dispatch routes a message into the target node's MessageRouter.
 func (c *routingCluster) dispatch(cn *clusterNode, msg protocol.Message) {
-	go func() {
-		switch msg.Payload.Type {
-		case protocol.Propose:
-			go cn.la.Acceptor.HandlePropose(msg)
-		case protocol.Ack:
-			go cn.la.Proposer.HandleAck(msg)
-		case protocol.Nack:
-			go cn.la.Proposer.HandleNack(msg)
-		case protocol.Learn:
-			go cn.la.Learner.HandleLearn(msg)
-		}
-	}()
+	cn.la.MessageRouter.HandleIncomingMessage(msg)
 }
 
 // waitForConvergence polls until all nodes have a learned value or times out.
@@ -133,7 +125,7 @@ func TestLA_single_proposal_converges_to_proposed_value(t *testing.T) {
 	// THEN:  all nodes eventually learn a value ≥ {N1:3, N2:0, N3:0}
 	// This validates the full happy scenario: PROPOSE → ACK → LEARN → onLearn callback.
 
-	c := newCluster([]crdt.NodeId{"N1", "N2", "N3"})
+	c := newCluster(t, []crdt.NodeId{"N1", "N2", "N3"})
 
 	c.nodes["N1"].la.Proposer.Propose(newTestGCounter(map[crdt.NodeId]uint64{
 		"N1": 3, "N2": 0, "N3": 0,
@@ -159,7 +151,7 @@ func TestLA_concurrent_proposals_converge_to_join_of_both_values(t *testing.T) {
 	// THEN:  all nodes eventually learn a value ≥ {N1:5, N2:7, N3:0}
 	// This validates that no proposal is ever lost.
 
-	c := newCluster([]crdt.NodeId{"N1", "N2", "N3"})
+	c := newCluster(t, []crdt.NodeId{"N1", "N2", "N3"})
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -197,7 +189,7 @@ func TestLA_learned_value_is_monotonically_non_decreasing_across_rounds(t *testi
 	// THEN:  the learned value never decreases between rounds
 	// Validates that bufferedValue monotonicity holds end-to-end.
 
-	c := newCluster([]crdt.NodeId{"N1", "N2", "N3"})
+	c := newCluster(t, []crdt.NodeId{"N1", "N2", "N3"})
 
 	rounds := []map[crdt.NodeId]uint64{
 		{"N1": 1, "N2": 0, "N3": 0},

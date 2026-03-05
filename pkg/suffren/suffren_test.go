@@ -2,12 +2,18 @@ package suffren
 
 import (
 	"suffren/internal/crdt"
+	"suffren/pkg/config"
 	"sync"
 	"testing"
 	"time"
 )
 
 // Helpers
+
+func configForTest() *config.Config {
+	cfg := config.DefaultConfig()
+	return cfg
+}
 
 func peers3() map[crdt.NodeId]string {
 	return map[crdt.NodeId]string{
@@ -55,7 +61,7 @@ func waitForConvergence(t *testing.T, expected uint64, nodes ...*Suffren) {
 func TestSuffren_node_initial_value_is_zero(t *testing.T) {
 	// GIVEN: a newly created Suffren node
 	// THEN:  its initial value is zero (the empty GCounter)
-	suffren := NewSuffren("N1", "8001", peers3())
+	suffren := NewSuffren("N1", "8001", peers3(), configForTest())
 
 	err := suffren.Start()
 	if err != nil {
@@ -72,7 +78,7 @@ func TestSuffren_increment_increses_value(t *testing.T) {
 	// GIVEN: a Suffren node
 	// WHEN:  we call Increment() n times
 	// THEN:  Value() returns n
-	suffren := NewSuffren(crdt.NodeId("N1"), "8001", peers3())
+	suffren := NewSuffren(crdt.NodeId("N1"), "8001", peers3(), configForTest())
 
 	err := suffren.Start()
 
@@ -99,20 +105,20 @@ func TestSuffren_concurrent_increments_converge_to_the_same_value(t *testing.T) 
 
 	peers := peers3bis()
 
-	s1 := NewSuffren(crdt.NodeId("N1"), "8011", peers)
+	s1 := NewSuffren(crdt.NodeId("N1"), "8011", peers, configForTest())
 	err := s1.Start()
 
 	if err != nil {
 		t.Fatalf("failed to create Suffren node 1: %v", err)
 	}
 	defer s1.Stop()
-	s2 := NewSuffren(crdt.NodeId("N2"), "8012", peers)
+	s2 := NewSuffren(crdt.NodeId("N2"), "8012", peers, configForTest())
 	err = s2.Start()
 	if err != nil {
 		t.Fatalf("failed to create Suffren node 2: %v", err)
 	}
 	defer s2.Stop()
-	s3 := NewSuffren(crdt.NodeId("N3"), "8013", peers)
+	s3 := NewSuffren(crdt.NodeId("N3"), "8013", peers, configForTest())
 	err = s3.Start()
 	if err != nil {
 		t.Fatalf("failed to create Suffren node 3: %v", err)
@@ -141,13 +147,13 @@ func TestSuffren_late_joining_node_catches_up(t *testing.T) {
 
 	peers := peers3()
 
-	s1 := NewSuffren(crdt.NodeId("N1"), "8001", peers)
+	s1 := NewSuffren(crdt.NodeId("N1"), "8001", peers, configForTest())
 	err := s1.Start()
 	if err != nil {
 		t.Fatalf("failed to create Suffren node 1: %v", err)
 	}
 	defer s1.Stop()
-	s2 := NewSuffren(crdt.NodeId("N2"), "8002", peers)
+	s2 := NewSuffren(crdt.NodeId("N2"), "8002", peers, configForTest())
 	err = s2.Start()
 	if err != nil {
 		t.Fatalf("failed to create Suffren node 2: %v", err)
@@ -160,7 +166,7 @@ func TestSuffren_late_joining_node_catches_up(t *testing.T) {
 		s2.Increment()
 	}
 
-	s3 := NewSuffren(crdt.NodeId("N3"), "8003", peers)
+	s3 := NewSuffren(crdt.NodeId("N3"), "8003", peers, configForTest())
 	err = s3.Start()
 	if err != nil {
 		t.Fatalf("failed to create Suffren node 3: %v", err)
