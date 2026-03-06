@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"suffren/internal/protocol"
 	"sync"
 )
@@ -49,21 +50,20 @@ func (s *Server) Listen() (<-chan protocol.Message, error) {
 	go func() {
 		defer s.wg.Done()
 		for {
-			select {
-			case <-s.done:
-				log.Printf("[SERVER] Shutting down server on port %s\n", s.port)
-				return
-			default:
-				conn, err := s.listener.Accept()
-				if err != nil {
-					log.Printf("[ERROR] Failed to accept connection%v\n", err)
-					continue
+			conn, err := s.listener.Accept()
+			if err != nil {
+				if isClosingNetwork(err) {
+					log.Printf("[SERVER] Shutting down server on port %s\n", s.port)
+					return
 				}
-				s.connections <- NewConnection(conn)
-				s.wg.Add(1)
-				go s.handleConnection(msgChanel)
+				log.Printf("[ERROR] Failed to accept connection%v\n", err)
+				continue
 			}
+			s.connections <- NewConnection(conn)
+			s.wg.Add(1)
+			go s.handleConnection(msgChanel)
 		}
+
 	}()
 	return msgChanel, nil
 }
@@ -92,8 +92,10 @@ func (s *Server) handleConnection(msgChanel chan protocol.Message) {
 				// Peer closed the connection cleanly — not an error.
 				return
 			}
-			log.Printf("[WARN] Lost connection to peer: %v\n", err)
-			return
+			if !isClosingNetwork(err) {
+				log.Printf("[WARN] Lost connection to peer: %v\n", err)
+				return
+			}
 		}
 
 		// Check if server is shutting down
@@ -105,6 +107,10 @@ func (s *Server) handleConnection(msgChanel chan protocol.Message) {
 
 		msgChanel <- msg
 	}
+}
+
+func isClosingNetwork(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
 }
 
 func (s *Server) Close() error {
