@@ -38,8 +38,8 @@ func (a *Acceptor) HandlePropose(msg protocol.Message) {
 		replyMsg := protocol.Message{
 			Sender: a.nodeId,
 			Payload: protocol.Command{
-				Type:      protocol.Ack,
-				SeqNumber: msg.Payload.SeqNumber,
+				Type:  protocol.Ack,
+				Value: msg.Payload.Value,
 			},
 		}
 		go func() {
@@ -54,9 +54,8 @@ func (a *Acceptor) HandlePropose(msg protocol.Message) {
 		replyMsg := protocol.Message{
 			Sender: a.nodeId,
 			Payload: protocol.Command{
-				Type:      protocol.Nack,
-				Value:     a.acceptedValue,
-				SeqNumber: msg.Payload.SeqNumber,
+				Type:  protocol.Nack,
+				Value: a.acceptedValue,
 			},
 		}
 		go func() {
