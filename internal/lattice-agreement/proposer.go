@@ -3,7 +3,6 @@ package latticeagreement
 import (
 	"log"
 	"sync"
-	"time"
 
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
@@ -22,25 +21,21 @@ type Proposer struct {
 	// quorumReached gates checkAndHandleQuorum to fire exactly once per round.
 	quorumReached bool
 	acksReceived  []bool
-	IsProposing   bool // true if currently in a proposal round
 
-	bufferedValue  crdt.Lattice
-	seqNumber      uint64
-	roundStartedAt time.Time // zero if no round in flight
+	proposedValue crdt.Lattice
+	bufferedValue crdt.Lattice
 }
 
 func NewProposer(network Network, nodeId crdt.NodeId, initialValue crdt.Lattice, peers map[crdt.NodeId]string) *Proposer {
 	return &Proposer{
-		network:        network,
-		nodeId:         nodeId,
-		peers:          peers,
-		quorumSize:     len(peers)/2 + 1,
-		quorumReached:  false,
-		acksReceived:   make([]bool, 0),
-		bufferedValue:  initialValue,
-		seqNumber:      0,
-		roundStartedAt: time.Time{}, // zero: no round in flight
-		IsProposing:    false,
+		network:       network,
+		nodeId:        nodeId,
+		peers:         peers,
+		quorumSize:    len(peers)/2 + 1,
+		quorumReached: false,
+		acksReceived:  make([]bool, 0),
+		proposedValue: initialValue,
+		bufferedValue: initialValue,
 	}
 }
 
@@ -50,19 +45,16 @@ func (p *Proposer) Propose(value crdt.Lattice) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.roundStartedAt = time.Now() // ← track when this round started
-	p.IsProposing = true
 	p.quorumReached = false
-	p.seqNumber++
 	p.acksReceived = make([]bool, 0)
-	p.bufferedValue = p.bufferedValue.Join(value)
+	p.proposedValue = p.bufferedValue.Join(value)
+	p.bufferedValue = p.proposedValue
 
 	msg := protocol.Message{
 		Sender: p.nodeId,
 		Payload: protocol.Command{
-			Type:      protocol.Propose,
-			Value:     p.bufferedValue,
-			SeqNumber: p.seqNumber,
+			Type:  protocol.Propose,
+			Value: p.proposedValue,
 		},
 	}
 	go func() {
@@ -77,7 +69,7 @@ func (p *Proposer) Propose(value crdt.Lattice) {
 func (p *Proposer) HandleAck(msg protocol.Message) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if msg.Payload.SeqNumber == p.seqNumber {
+	if msg.Payload.Value.Equals(p.proposedValue) {
 		p.acksReceived = append(p.acksReceived, true)
 		p.checkAndHandleQuorum()
 	}
@@ -88,13 +80,13 @@ func (p *Proposer) HandleAck(msg protocol.Message) {
 func (p *Proposer) HandleNack(msg protocol.Message) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if msg.Payload.SeqNumber == p.seqNumber {
+	if p.proposedValue.IsIn(msg.Payload.Value) {
 		p.acksReceived = append(p.acksReceived, false)
 		p.bufferedValue = p.bufferedValue.Join(msg.Payload.Value)
 		p.checkAndHandleQuorum()
 	} else {
-		log.Printf("[Proposer:%s] NACK ignored: stale seq=%d (current=%d)",
-			p.nodeId, msg.Payload.SeqNumber, p.seqNumber)
+		log.Printf("[Proposer:%s] NACK ignored: stale value=%v (current=%v)",
+			p.nodeId, msg.Payload.Value, p.proposedValue)
 	}
 }
 
@@ -108,15 +100,11 @@ func (p *Proposer) checkAndHandleQuorum() {
 	if len(p.acksReceived) >= p.quorumSize {
 		p.quorumReached = true
 		if noNacks(p.acksReceived) {
-			p.IsProposing = false
-			p.roundStartedAt = time.Time{} // zero
-
 			msg := protocol.Message{
 				Sender: p.nodeId,
 				Payload: protocol.Command{
-					Type:      protocol.Learn,
-					Value:     p.bufferedValue,
-					SeqNumber: p.seqNumber,
+					Type:  protocol.Learn,
+					Value: p.proposedValue,
 				},
 			}
 			// Broadcast is blocking I/O — goroutine avoids holding the lock during network calls.
@@ -130,17 +118,14 @@ func (p *Proposer) checkAndHandleQuorum() {
 		} else {
 			// At least one NACK: re-propose with the accumulated bufferedValue.
 			// bufferedValue already contains the join of all NACK payloads from HandleNack.
-			p.seqNumber++
+			p.proposedValue = p.bufferedValue
 			p.acksReceived = make([]bool, 0)
 			p.quorumReached = false
-			p.IsProposing = true
-			log.Printf("[Proposer:%s] Dirty quorum — re-proposing (seq=%d) with bufferedValue: %v",
-				p.nodeId, p.seqNumber, p.bufferedValue)
+
 			msg := protocol.Message{Sender: p.nodeId,
 				Payload: protocol.Command{
-					Type:      protocol.Propose,
-					Value:     p.bufferedValue,
-					SeqNumber: p.seqNumber,
+					Type:  protocol.Propose,
+					Value: p.proposedValue,
 				},
 			}
 			go func() {
@@ -161,28 +146,4 @@ func noNacks(acks []bool) bool {
 		}
 	}
 	return true
-}
-
-// IsRoundStuck returns true if a round has been in flight longer than timeout.
-func (p *Proposer) IsRoundStuck(timeout time.Duration) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.roundStartedAt.IsZero() {
-		return false // no round in flight
-	}
-	if !p.IsProposing && time.Since(p.roundStartedAt) <= timeout {
-		return false // round completed cleanly
-	}
-	return time.Since(p.roundStartedAt) > timeout
-}
-
-// IsRoundInFlight returns true if a round is currently proposing
-// and has not yet timed out.
-func (p *Proposer) IsRoundInFlight(timeout time.Duration) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.roundStartedAt.IsZero() || p.IsProposing == false {
-		return false
-	}
-	return time.Since(p.roundStartedAt) <= timeout
 }

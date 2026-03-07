@@ -43,17 +43,17 @@ func TestRouter_each_type_is_enqueued_in_the_correct_mailbox(t *testing.T) {
 	}{
 		{
 			name:  "PROPOSE → acceptor",
-			msg:   propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}), 1),
+			msg:   propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0})),
 			wantA: 1,
 		},
 		{
 			name:  "ACK → proposer",
-			msg:   ack(1),
+			msg:   ack(newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0})),
 			wantP: 1,
 		},
 		{
 			name:  "NACK → proposer",
-			msg:   nack(newTestGCounter(map[crdt.NodeId]uint64{"N1": 1}), 1),
+			msg:   nack(newTestGCounter(map[crdt.NodeId]uint64{"N1": 1})),
 			wantP: 1,
 		},
 		{
@@ -98,7 +98,7 @@ func TestRouter_full_mailbox_drops_without_blocking(t *testing.T) {
 	// Intentionally NOT started. Mailbox is never drained.
 	la := NewLatticeAgreement("N2", peers3(), net, bottom, func(crdt.Lattice) {}, smallCfg)
 
-	fill := propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}), 1)
+	fill := propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}))
 	la.MessageRouter.HandleIncomingMessage(fill) // occupies the single slot
 
 	done := make(chan struct{})
@@ -123,8 +123,8 @@ func TestRouter_concurrent_sends_no_race(t *testing.T) {
 	la, _ := newStartedLA(t, "N2", nil)
 
 	msgs := []protocol.Message{
-		propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}), 1),
-		{Sender: "N1", Payload: protocol.Command{Type: protocol.Ack, SeqNumber: 1}},
+		propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0})),
+		{Sender: "N1", Payload: protocol.Command{Type: protocol.Ack, Value: newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0})}},
 		{Sender: "N1", Payload: protocol.Command{
 			Type:  protocol.Learn,
 			Value: newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}),
@@ -153,7 +153,7 @@ func TestRouter_stop_during_message_flood_does_not_panic(t *testing.T) {
 
 	la, _ := newStartedLA(t, "N2", nil)
 
-	msg := propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}), 1)
+	msg := propose("N1", newTestGCounter(map[crdt.NodeId]uint64{"N1": 1, "N2": 0, "N3": 0}))
 
 	var running atomic.Bool
 	running.Store(true)

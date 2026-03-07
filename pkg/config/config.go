@@ -7,20 +7,18 @@ import (
 )
 
 type Config struct {
-	Node             NodeConfig             `json:"node"`
+	Suffren          SuffrenConfig          `json:"suffren"`
 	LatticeAgreement LatticeAgreementConfig `json:"lattice_agreement"`
 }
 
-type NodeConfig struct {
-	// ProposalInterval is how often the node checks if a new round is needed.
-	// Default: 50ms
-	ProposalInterval time.Duration
-
+type SuffrenConfig struct {
 	// RoundTimeout is how long a proposal round may be in flight before
 	// it is considered dead and a new round is started.
 	// Must be > ProposalInterval.
 	// Default: 2s
 	RoundTimeout time.Duration
+	// StartupSyncTimeout is the maximum time to retry Value() on startup
+	StartupSyncTimeout time.Duration
 }
 
 type LatticeAgreementConfig struct {
@@ -44,9 +42,9 @@ func LoadConfig(filename string) (*Config, error) {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Node: NodeConfig{
-			ProposalInterval: 50 * time.Millisecond,
-			RoundTimeout:     2 * time.Second,
+		Suffren: SuffrenConfig{
+			RoundTimeout:       2 * time.Second,
+			StartupSyncTimeout: 5 * time.Second,
 		},
 		LatticeAgreement: LatticeAgreementConfig{
 			MsgChanSize: 1024,

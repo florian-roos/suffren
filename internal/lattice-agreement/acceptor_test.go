@@ -88,13 +88,12 @@ func newTestGCounter(counts map[crdt.NodeId]uint64) *crdt.GCounter {
 	return g
 }
 
-func propose(proposer crdt.NodeId, value *crdt.GCounter, seq uint64) protocol.Message {
+func propose(proposer crdt.NodeId, value *crdt.GCounter) protocol.Message {
 	return protocol.Message{
 		Sender: proposer,
 		Payload: protocol.Command{
-			Type:      protocol.Propose,
-			Value:     value,
-			SeqNumber: seq,
+			Type:  protocol.Propose,
+			Value: value,
 		},
 	}
 }
@@ -140,7 +139,7 @@ func TestAcceptor_ACKs_when_accepted_is_dominated_by_proposal(t *testing.T) {
 	acceptor.acceptedValue = newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0})
 
 	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 3, "B": 2})
-	acceptor.HandlePropose(propose("N1", proposed, 1))
+	acceptor.HandlePropose(propose("N1", proposed))
 
 	// Wait for the goroutine to send
 	msg, exists := waitForMessage(t, net, "N1")
@@ -153,8 +152,11 @@ func TestAcceptor_ACKs_when_accepted_is_dominated_by_proposal(t *testing.T) {
 	if msg.Sender != "N2" {
 		t.Fatalf("expected sender N2, got %s", msg.Sender)
 	}
-	if msg.Payload.SeqNumber != 1 {
-		t.Fatalf("expected SeqNumber 1, got %d", msg.Payload.SeqNumber)
+
+	// ACK must echo back the proposed value
+	ackValue := msg.Payload.Value.(*crdt.GCounter)
+	if ackValue.Counts["A"] != 3 || ackValue.Counts["B"] != 2 {
+		t.Fatalf("expected ACK value={A:3,B:2}, got %v", ackValue.Counts)
 	}
 
 	// acceptedValue must have been updated
@@ -176,7 +178,7 @@ func TestAcceptor_NACKs_when_proposal_is_incomparable(t *testing.T) {
 	acceptor.acceptedValue = newTestGCounter(map[crdt.NodeId]uint64{"A": 3, "B": 0})
 
 	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 5})
-	acceptor.HandlePropose(propose("N1", proposed, 1))
+	acceptor.HandlePropose(propose("N1", proposed))
 
 	msg, exists := waitForMessage(t, net, "N1")
 	if !exists {
@@ -211,7 +213,7 @@ func TestAcceptor_NACKs_when_proposal_is_strictly_dominated(t *testing.T) {
 	acceptor.acceptedValue = newTestGCounter(map[crdt.NodeId]uint64{"A": 5, "B": 5})
 
 	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 1})
-	acceptor.HandlePropose(propose("N1", proposed, 1))
+	acceptor.HandlePropose(propose("N1", proposed))
 
 	msg, exists := waitForMessage(t, net, "N1")
 	if !exists {
@@ -238,7 +240,7 @@ func TestAcceptor_ACKs_when_proposal_equals_accepted(t *testing.T) {
 	acceptor.acceptedValue = newTestGCounter(map[crdt.NodeId]uint64{"A": 3, "B": 3})
 
 	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 3, "B": 3})
-	acceptor.HandlePropose(propose("N1", proposed, 1))
+	acceptor.HandlePropose(propose("N1", proposed))
 
 	msg, exists := waitForMessage(t, net, "N1")
 	if !exists {
@@ -267,7 +269,7 @@ func TestAcceptor_acceptedValue_is_monotonically_non_decreasing(t *testing.T) {
 
 	prevValue := bottom
 	for i, p := range proposals {
-		acceptor.HandlePropose(propose("N1", p, uint64(i+1)))
+		acceptor.HandlePropose(propose("N1", p))
 
 		waitForMessage(t, net, "N1")
 
@@ -307,7 +309,7 @@ func TestAcceptor_concurrent_proposals_do_not_corrupt_state(t *testing.T) {
 				"B": uint64(n - i),
 				"C": 1,
 			})
-			acceptor.HandlePropose(propose("N1", val, uint64(i)))
+			acceptor.HandlePropose(propose("N1", val))
 		}(i)
 	}
 

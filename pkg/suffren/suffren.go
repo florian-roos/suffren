@@ -1,19 +1,31 @@
 package suffren
 
 import (
+	"log"
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/node"
 	"suffren/internal/p2p"
 	"suffren/pkg/config"
 	"sync"
+	"time"
 )
 
+// pendingOp tracks the in-flight operation (Increment or Value) so that
+// the learn callback can signal exactly the caller that initiated it.
+type pendingOp struct {
+	proposedValue crdt.Lattice
+	done          chan *crdt.GCounter // buffered(1) so learn callback never blocks
+}
+
 type Suffren struct {
-	mu           sync.RWMutex
+	opMu         sync.Mutex // serialises Increment()/Value() — at most one in flight
+	mu           sync.Mutex // protects localCounter and pending
 	node         *node.Node
 	localCounter *crdt.GCounter
+	pending      *pendingOp // non-nil while an operation is waiting for its LEARN
 	la           *latticeagreement.LatticeAgreement
+	cfg          *config.Config
 }
 
 func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, config *config.Config) *Suffren {
@@ -23,25 +35,29 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 	}
 
 	suffren := &Suffren{
-		mu:           sync.RWMutex{},
 		localCounter: crdt.NewGCounter(nodeIds),
+		cfg:          config,
 	}
-
 	network := p2p.NewNetwork(port, peers)
 
 	suffren.la = latticeagreement.NewLatticeAgreement(nodeId, peers, network, suffren.localCounter.Bottom(), func(learnedValue crdt.Lattice) {
 		suffren.mu.Lock()
 		defer suffren.mu.Unlock()
+
+		// Always merge: monotonic join keeps the local counter up to date.
 		suffren.localCounter.MergeInPlace(learnedValue)
+
+		// Signal the pending operation only if the learned value contains
+		// what was proposed (linearisable guarantee for that caller).
+		if suffren.pending != nil && suffren.pending.proposedValue.IsIn(learnedValue) {
+			select {
+			case suffren.pending.done <- suffren.localCounter.Copy():
+			default: // already signalled or caller timed out
+			}
+		}
 	}, &config.LatticeAgreement)
 
-	suffren.node = node.NewNode(nodeId, port, peers, network, suffren.la, func() crdt.Lattice {
-		// A RLock snapshot avoids a data race between periodicPropose (reader)
-		// and the learn callback (writer), both of which access localCounter.
-		suffren.mu.RLock()
-		defer suffren.mu.RUnlock()
-		return suffren.localCounter.Copy()
-	}, config)
+	suffren.node = node.NewNode(nodeId, port, peers, network, suffren.la, config)
 
 	return suffren
 }
@@ -51,24 +67,83 @@ func (s *Suffren) Start() error {
 	if err != nil {
 		return err
 	}
+	// Retry Value() until it succeeds (peers may still be reconnecting).
+	deadline := time.Now().Add(s.cfg.Suffren.StartupSyncTimeout)
+	for time.Now().Before(deadline) {
+		_, ok := s.Value()
+		if ok {
+			log.Printf("[Suffren] Startup sync complete")
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	log.Printf("[Suffren] WARNING: startup sync timed out. Proceeding with local state")
 	return nil
 }
 
 // Increment increments the local counter and proposes the new value to the cluster.
-func (s *Suffren) Increment() {
+// Blocks until a quorum LEARN containing the increment is received or timeout.
+func (s *Suffren) Increment() (uint64, bool) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+
+	done := make(chan *crdt.GCounter, 1)
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.localCounter.Increment(s.node.Id)
+	proposed := s.localCounter.Copy()
+	s.pending = &pendingOp{proposedValue: proposed, done: done}
+	s.la.Proposer.Propose(s.localCounter)
+	s.mu.Unlock()
+
+	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+
+	s.mu.Lock()
+	s.pending = nil
+	s.mu.Unlock()
+
+	if ok {
+		return value.Value(), true
+	}
+	return 0, false
 }
 
-// Return the current value of the counter. Note that this function is wait-free and the value may be stale if there are ongoing proposals in the cluster.
-func (s *Suffren) Value() uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.localCounter.Value()
+// Value performs a linearisable quorum read: proposes the current state,
+// waits for LEARN, and returns the value that was committed.
+func (s *Suffren) Value() (uint64, bool) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+
+	done := make(chan *crdt.GCounter, 1)
+
+	s.mu.Lock()
+	proposed := s.localCounter.Copy()
+	s.pending = &pendingOp{proposedValue: proposed, done: done}
+	s.la.Proposer.Propose(proposed)
+	s.mu.Unlock()
+
+	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+
+	s.mu.Lock()
+	s.pending = nil
+	s.mu.Unlock()
+
+	if ok {
+		return value.Value(), true
+	}
+	return 0, false
 }
 
 // Stop the node and its network service gracefully.
 func (s *Suffren) Stop() {
 	s.node.Stop()
+}
+
+func (s *Suffren) waitForLearn(done <-chan *crdt.GCounter, timeout time.Duration) (bool, *crdt.GCounter) {
+	select {
+	case <-time.After(timeout):
+		return false, nil
+	case value := <-done:
+		return true, value
+	}
 }
