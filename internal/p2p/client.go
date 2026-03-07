@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"suffren/internal/protocol"
@@ -34,13 +35,28 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 	}
 
 	err := conn.Send(msg)
-
 	if err != nil {
-		log.Printf("[ERROR] Failed to send message (Message: %v): %v\n", msg, err)
+		// Connection is stale (peer restarted). Remove it and retry once.
+		log.Printf("[WARN] Send to %s failed (stale connection), reconnecting: %v", targetAddr, err)
 		c.mu.Lock()
 		delete(c.pool, targetAddr)
 		c.mu.Unlock()
-		return err
+		conn.Close()
+
+		// Retry with a fresh connection
+		conn, dialErr := c.connect(targetAddr)
+		if dialErr != nil {
+			return fmt.Errorf("retry dial to %s failed: %w (original: %v)", targetAddr, dialErr, err)
+		}
+		retryErr := conn.Send(msg)
+		if retryErr != nil {
+			log.Printf("[ERROR] Retry send to %s also failed: %v", targetAddr, retryErr)
+			c.mu.Lock()
+			delete(c.pool, targetAddr)
+			c.mu.Unlock()
+			return retryErr
+		}
+		return nil
 	}
 
 	return nil

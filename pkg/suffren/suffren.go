@@ -1,6 +1,7 @@
 package suffren
 
 import (
+	"log"
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/node"
@@ -66,7 +67,17 @@ func (s *Suffren) Start() error {
 	if err != nil {
 		return err
 	}
-	s.Value() // trigger initial learn to avoid increment local node while it was already made before (in case of a restart)
+	// Retry Value() until it succeeds (peers may still be reconnecting).
+	deadline := time.Now().Add(s.cfg.Suffren.StartupSyncTimeout)
+	for time.Now().Before(deadline) {
+		_, ok := s.Value()
+		if ok {
+			log.Printf("[Suffren] Startup sync complete")
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	log.Printf("[Suffren] WARNING: startup sync timed out. Proceeding with local state")
 	return nil
 }
 
