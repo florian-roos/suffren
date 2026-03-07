@@ -31,15 +31,47 @@ func peers3bis() map[crdt.NodeId]string {
 	}
 }
 
+// startCluster creates and starts all 3 nodes. Returns them and a cleanup func.
+func startCluster(t *testing.T, peers map[crdt.NodeId]string) (s1, s2, s3 *Suffren) {
+	t.Helper()
+	cfg := configForTest()
+
+	var ports []string
+	var ids []crdt.NodeId
+	for id, addr := range peers {
+		ids = append(ids, id)
+		// extract port from "localhost:PORT"
+		ports = append(ports, addr[len("localhost:"):])
+	}
+
+	s1 = NewSuffren(ids[0], ports[0], peers, cfg)
+	s2 = NewSuffren(ids[1], ports[1], peers, cfg)
+	s3 = NewSuffren(ids[2], ports[2], peers, cfg)
+
+	for _, s := range []*Suffren{s1, s2, s3} {
+		if err := s.Start(); err != nil {
+			t.Fatalf("failed to start node: %v", err)
+		}
+	}
+
+	t.Cleanup(func() {
+		s1.Stop()
+		s2.Stop()
+		s3.Stop()
+	})
+
+	return s1, s2, s3
+}
+
 // waitForConvergence polls until all nodes report the expected value or times out.
-// Needed because convergence happens asynchronously over TCP.
 func waitForConvergence(t *testing.T, expected uint64, nodes ...*Suffren) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		allConverged := true
 		for _, n := range nodes {
-			if n.Value() != expected {
+			val, ok := n.Value()
+			if !ok || val != expected {
 				allConverged = false
 				break
 			}
@@ -49,9 +81,9 @@ func waitForConvergence(t *testing.T, expected uint64, nodes ...*Suffren) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	// Timeout — report what each node actually has
 	for i, n := range nodes {
-		t.Errorf("node %d: expected %d, got %d", i, expected, n.Value())
+		val, ok := n.Value()
+		t.Errorf("node %d: expected %d, got %d (ok=%v)", i, expected, val, ok)
 	}
 	t.Fatalf("nodes did not converge to %d within 5s", expected)
 }
@@ -59,71 +91,50 @@ func waitForConvergence(t *testing.T, expected uint64, nodes ...*Suffren) {
 // Tests
 
 func TestSuffren_node_initial_value_is_zero(t *testing.T) {
-	// GIVEN: a newly created Suffren node
+	// GIVEN: a 3-node cluster (quorum = 2)
 	// THEN:  its initial value is zero (the empty GCounter)
-	suffren := NewSuffren("N1", "8001", peers3(), configForTest())
+	s1, _, _ := startCluster(t, peers3())
 
-	err := suffren.Start()
-	if err != nil {
-		t.Fatalf("failed to create Suffren node: %v", err)
+	val, ok := s1.Value()
+	if !ok {
+		t.Fatal("Value() timed out on a fresh cluster")
 	}
-	defer suffren.Stop()
-
-	if val := suffren.Value(); val != 0 {
+	if val != 0 {
 		t.Errorf("expected initial value to be 0, got %d", val)
 	}
 }
 
 func TestSuffren_increment_increses_value(t *testing.T) {
-	// GIVEN: a Suffren node
-	// WHEN:  we call Increment() n times
+	// GIVEN: a 3-node cluster
+	// WHEN:  we call Increment() n times on one node
 	// THEN:  Value() returns n
-	suffren := NewSuffren(crdt.NodeId("N1"), "8001", peers3(), configForTest())
-
-	err := suffren.Start()
-
-	if err != nil {
-		t.Fatalf("failed to create Suffren node: %v", err)
-	}
-	defer suffren.Stop()
+	s1, _, _ := startCluster(t, peers3bis())
 
 	increments := 5
 	for i := 0; i < increments; i++ {
-		suffren.Increment()
+		_, ok := s1.Increment()
+		if !ok {
+			t.Fatalf("Increment() #%d timed out", i+1)
+		}
 	}
 
-	if val := suffren.Value(); val != uint64(increments) {
+	val, ok := s1.Value()
+	if !ok {
+		t.Fatal("Value() timed out")
+	}
+	if val != uint64(increments) {
 		t.Errorf("expected value to be %d after %d increments, got %d", increments, increments, val)
 	}
 }
 
 func TestSuffren_concurrent_increments_converge_to_the_same_value(t *testing.T) {
-	// GIVEN: 3 nodes that run in parrallel
+	// GIVEN: 3 nodes that run in parallel
 	// WHEN: The nodes Increment() concurrently with goroutines
 	// THEN: The nodes converge toward the same value
 	// This ensures that no value is lost even with contention
 
 	peers := peers3bis()
-
-	s1 := NewSuffren(crdt.NodeId("N1"), "8011", peers, configForTest())
-	err := s1.Start()
-
-	if err != nil {
-		t.Fatalf("failed to create Suffren node 1: %v", err)
-	}
-	defer s1.Stop()
-	s2 := NewSuffren(crdt.NodeId("N2"), "8012", peers, configForTest())
-	err = s2.Start()
-	if err != nil {
-		t.Fatalf("failed to create Suffren node 2: %v", err)
-	}
-	defer s2.Stop()
-	s3 := NewSuffren(crdt.NodeId("N3"), "8013", peers, configForTest())
-	err = s3.Start()
-	if err != nil {
-		t.Fatalf("failed to create Suffren node 3: %v", err)
-	}
-	defer s3.Stop()
+	s1, s2, s3 := startCluster(t, peers)
 
 	wg := sync.WaitGroup{}
 
@@ -143,20 +154,21 @@ func TestSuffren_late_joining_node_catches_up(t *testing.T) {
 	// GIVEN: 2 nodes that run in parallel, and a 3rd node that starts later
 	// WHEN:  the first 2 nodes Increment() a few times before the 3rd node starts
 	// THEN:  all nodes eventually converge to the same value, including the late-joining node
-	// This validates that late-joining nodes can catch up through periodic proposals.
 
 	peers := peers3()
 
-	s1 := NewSuffren(crdt.NodeId("N1"), "8001", peers, configForTest())
-	err := s1.Start()
-	if err != nil {
-		t.Fatalf("failed to create Suffren node 1: %v", err)
+	cfg := configForTest()
+
+	// Start only N1 and N2 initially — extract their ports from the peers map.
+	s1 := NewSuffren(crdt.NodeId("N1"), peers["N1"][len("localhost:"):], peers, cfg)
+	if err := s1.Start(); err != nil {
+		t.Fatalf("failed to start node 1: %v", err)
 	}
 	defer s1.Stop()
-	s2 := NewSuffren(crdt.NodeId("N2"), "8002", peers, configForTest())
-	err = s2.Start()
-	if err != nil {
-		t.Fatalf("failed to create Suffren node 2: %v", err)
+
+	s2 := NewSuffren(crdt.NodeId("N2"), peers["N2"][len("localhost:"):], peers, cfg)
+	if err := s2.Start(); err != nil {
+		t.Fatalf("failed to start node 2: %v", err)
 	}
 	defer s2.Stop()
 
@@ -166,10 +178,9 @@ func TestSuffren_late_joining_node_catches_up(t *testing.T) {
 		s2.Increment()
 	}
 
-	s3 := NewSuffren(crdt.NodeId("N3"), "8003", peers, configForTest())
-	err = s3.Start()
-	if err != nil {
-		t.Fatalf("failed to create Suffren node 3: %v", err)
+	s3 := NewSuffren(crdt.NodeId("N3"), peers["N3"][len("localhost:"):], peers, cfg)
+	if err := s3.Start(); err != nil {
+		t.Fatalf("failed to start node 3: %v", err)
 	}
 	defer s3.Stop()
 
