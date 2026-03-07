@@ -8,23 +8,22 @@ import (
 
 // Helpers
 
-func ack(seq uint64) protocol.Message {
+func ack(value *crdt.GCounter) protocol.Message {
 	return protocol.Message{
 		Sender: "N-acceptor",
 		Payload: protocol.Command{
-			Type:      protocol.Ack,
-			SeqNumber: seq,
+			Type:  protocol.Ack,
+			Value: value,
 		},
 	}
 }
 
-func nack(value *crdt.GCounter, seq uint64) protocol.Message {
+func nack(value *crdt.GCounter) protocol.Message {
 	return protocol.Message{
 		Sender: "N-acceptor",
 		Payload: protocol.Command{
-			Type:      protocol.Nack,
-			Value:     value,
-			SeqNumber: seq,
+			Type:  protocol.Nack,
+			Value: value,
 		},
 	}
 }
@@ -82,17 +81,20 @@ func TestProposer_broadcasts_LEARN_with_bufferedValue_not_original_proposal(t *t
 		"N2": "localhost:8002",
 	})
 
-	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0}))
+	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0})
+	p.Propose(proposed)
 	waitForBroadcast(t, net, protocol.Propose)
 	net.mu.Lock()
-	net.broadcasted = nil // clear so the next waitForBroadcast only sees the re-proposal
+	net.broadcasted = nil
 	net.mu.Unlock()
 
-	// Acceptor NACKs with a value that has B:7
-	p.HandleNack(nack(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 7}), 1))
-	p.HandleAck(ack(1)) // quorum reached (1 NACK + 1 ACK = 2 = quorumSize)
+	// NACK with a value that has B:7 (≥ proposed, so proposedValue.IsIn(nackValue))
+	nackValue := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 7})
+	p.HandleNack(nack(nackValue))
+	// ACK with the proposed value to reach quorum (1 NACK + 1 ACK = 2 = quorumSize)
+	p.HandleAck(ack(proposed))
 
-	// Re-proposal with buffered value
+	// Re-proposal with buffered value (dirty quorum)
 	reproposal, exists := waitForBroadcast(t, net, protocol.Propose)
 	if !exists {
 		t.Fatal("expected re-PROPOSE after NACK quorum, got none")
@@ -102,9 +104,9 @@ func TestProposer_broadcasts_LEARN_with_bufferedValue_not_original_proposal(t *t
 		t.Fatalf("re-proposal should carry B:7 from NACK, got %v", reproposalValue.Counts)
 	}
 
-	newSeq := reproposal.Payload.SeqNumber
-	p.HandleAck(ack(newSeq))
-	p.HandleAck(ack(newSeq))
+	// Now send 2 ACKs for the re-proposed value to reach clean quorum
+	p.HandleAck(ack(reproposalValue))
+	p.HandleAck(ack(reproposalValue))
 
 	msg, exists := waitForBroadcast(t, net, protocol.Learn)
 	if !exists {
@@ -117,33 +119,33 @@ func TestProposer_broadcasts_LEARN_with_bufferedValue_not_original_proposal(t *t
 	}
 }
 
-func TestProposer_stale_responses_from_previous_round_are_ignored(t *testing.T) {
-	// GIVEN: a proposer in round seq=2 (it already re-proposed once)
-	// WHEN:  it receives an ACK with seq=1 (from the old round)
-	// THEN:  the stale ACK does not count toward quorum
-	// This simulates a slow acceptor that replies late after a round has moved on.
+func TestProposer_stale_ACK_for_old_value_is_ignored(t *testing.T) {
+	// GIVEN: a proposer that has moved to a new proposal
+	// WHEN:  it receives ACKs matching the OLD proposed value
+	// THEN:  those stale ACKs do not count toward quorum
 
 	net := &mockNetwork{}
 	bottom := newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 0})
 	p := NewProposer(net, "N1", bottom, peers3())
 
-	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0}))
+	oldValue := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0})
+	p.Propose(oldValue)
 	waitForBroadcast(t, net, protocol.Propose)
 
-	// New round (seq=2) by calling Propose again
+	// New proposal overwrites the round
 	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 2, "B": 0}))
 	waitForBroadcast(t, net, protocol.Propose)
 
 	net.broadcasted = nil
 
-	// Late ACK from old round seq=1 — must be ignored
-	p.HandleAck(ack(1))
-	p.HandleAck(ack(1))
+	// Late ACKs from old round carry the old value — must be ignored
+	p.HandleAck(ack(oldValue))
+	p.HandleAck(ack(oldValue))
 
 	// No LEARN should have been triggered
 	_, learnSent := net.lastBroadcastOfType(protocol.Learn)
 	if learnSent {
-		t.Fatal("stale ACKs from previous round should not trigger LEARN")
+		t.Fatal("stale ACKs matching old proposed value should not trigger LEARN")
 	}
 }
 
@@ -151,7 +153,6 @@ func TestProposer_quorum_gate_prevents_duplicate_LEARN(t *testing.T) {
 	// GIVEN: a 2-node cluster (quorumSize=2), proposer already reached quorum
 	// WHEN:  a third ACK arrives after quorum was already declared
 	// THEN:  only one LEARN is broadcast, not two
-	// Without the quorumReached flag, each extra ACK would fire another LEARN.
 
 	net := &mockNetwork{}
 	bottom := newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 0})
@@ -160,18 +161,19 @@ func TestProposer_quorum_gate_prevents_duplicate_LEARN(t *testing.T) {
 		"N2": "localhost:8002",
 	})
 
-	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0}))
+	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0})
+	p.Propose(proposed)
 	waitForBroadcast(t, net, protocol.Propose)
 
-	p.HandleAck(ack(1))
-	p.HandleAck(ack(1))
+	p.HandleAck(ack(proposed))
+	p.HandleAck(ack(proposed))
 	waitForBroadcast(t, net, protocol.Learn)
 
 	beforeCount := net.countBroadcastsOfType(protocol.Learn)
 
-	// Extra ACK — should be ignored
-	p.HandleAck(ack(1))
-	p.HandleAck(ack(1))
+	// Extra ACKs — should be ignored (quorum already reached)
+	p.HandleAck(ack(proposed))
+	p.HandleAck(ack(proposed))
 
 	afterCount := net.countBroadcastsOfType(protocol.Learn)
 	if afterCount != beforeCount {
@@ -183,7 +185,6 @@ func TestProposer_bufferedValue_accumulates_all_NACK_payloads_across_responses(t
 	// GIVEN: a proposer that receives two NACKs, each with disjoint missing components
 	// WHEN:  it reaches quorum (2 NACKs = quorumSize=2) and re-proposes
 	// THEN:  the re-proposal carries the join of BOTH nack values, not just the last
-	// This ensures the proposer never loses information from any NACK.
 
 	net := &mockNetwork{}
 	bottom := newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 0, "C": 0})
@@ -192,22 +193,20 @@ func TestProposer_bufferedValue_accumulates_all_NACK_payloads_across_responses(t
 		"N2": "localhost:8002",
 	})
 
-	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0, "C": 0}))
+	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0, "C": 0})
+	p.Propose(proposed)
 	waitForBroadcast(t, net, protocol.Propose)
 	net.mu.Lock()
-	net.broadcasted = nil // clear so the next waitForBroadcast only sees the re-proposal
+	net.broadcasted = nil
 	net.mu.Unlock()
 
-	// Two NACKs with disjoint missing components
-	p.HandleNack(nack(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 5, "C": 0}), 1))
-	p.HandleNack(nack(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0, "C": 9}), 1))
+	// Two NACKs with disjoint missing components (both ≥ proposed)
+	p.HandleNack(nack(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 5, "C": 0})))
+	p.HandleNack(nack(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0, "C": 9})))
 
 	reproposal, exists := waitForBroadcast(t, net, protocol.Propose)
 	if !exists {
 		t.Fatal("expected re-PROPOSE after NACK quorum")
-	}
-	if reproposal.Payload.SeqNumber == 1 {
-		t.Fatal("re-proposal must have a new sequence number")
 	}
 
 	v := reproposal.Payload.Value.(*crdt.GCounter)
@@ -217,27 +216,27 @@ func TestProposer_bufferedValue_accumulates_all_NACK_payloads_across_responses(t
 }
 
 func TestProposer_new_Propose_resets_round_and_invalidates_previous_quorum(t *testing.T) {
-	// GIVEN: a proposer mid-round (seq=1, 1 ACK received, quorumSize=2)
+	// GIVEN: a proposer mid-round (1 ACK received, quorumSize=2)
 	// WHEN:  Propose() is called again before the round completes
 	// THEN:  the old ACK is discarded, the new round starts fresh
-	// This simulates the periodic proposer firing during an in-progress round.
 
 	net := &mockNetwork{}
 	bottom := newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 0})
 	p := NewProposer(net, "N1", bottom, peers3())
 
 	// Start round 1
-	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0}))
+	oldValue := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0})
+	p.Propose(oldValue)
 	waitForBroadcast(t, net, protocol.Propose)
 
-	p.HandleAck(ack(1))
+	p.HandleAck(ack(oldValue))
 
-	// Periodic proposer fires, starting round 2 before round 1 quorum
+	// New Propose resets the round
 	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 2, "B": 0}))
 	net.broadcasted = nil
 
-	// The remaining ACK from round 1 arrives late and must be ignored
-	p.HandleAck(ack(1))
+	// Late ACK from old round (carries old value) — must be ignored
+	p.HandleAck(ack(oldValue))
 
 	_, learnSent := net.lastBroadcastOfType(protocol.Learn)
 	if learnSent {
