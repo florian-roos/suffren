@@ -100,7 +100,6 @@ func (p *Proposer) checkAndHandleQuorum() {
 	if len(p.acksReceived) >= p.quorumSize {
 		p.quorumReached = true
 		if noNacks(p.acksReceived) {
-			p.proposedValue = p.bufferedValue
 			msg := protocol.Message{
 				Sender: p.nodeId,
 				Payload: protocol.Command{
