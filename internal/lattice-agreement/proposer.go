@@ -122,8 +122,7 @@ func (p *Proposer) checkAndHandleQuorum() {
 			p.proposedValue = p.bufferedValue
 			p.acksReceived = make([]bool, 0)
 			p.quorumReached = false
-			log.Printf("[Proposer:%s] Dirty quorum — proposing bufferedValue: %v",
-				p.nodeId, p.proposedValue)
+
 			msg := protocol.Message{Sender: p.nodeId,
 				Payload: protocol.Command{
 					Type:  protocol.Propose,

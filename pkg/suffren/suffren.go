@@ -62,7 +62,12 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 }
 
 func (s *Suffren) Start() error {
-	return s.node.Start()
+	err := s.node.Start()
+	if err != nil {
+		return err
+	}
+	s.Value() // trigger initial learn to avoid increment local node while it was already made before (in case of a restart)
+	return nil
 }
 
 // Increment increments the local counter and proposes the new value to the cluster.
