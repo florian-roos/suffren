@@ -46,7 +46,7 @@ func (n *Node) Start() error {
 
 	if err == nil {
 		n.la.Start()
-		n.wg.Add(2)
+		n.wg.Add(1)
 		go n.handleIncomingMsgChannel(incomingMsgChan)
 		return nil
 	} else {
