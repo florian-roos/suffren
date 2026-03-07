@@ -4,7 +4,7 @@
 
 Suffren is a replicated distributed counter on N nodes that converges without a central coordinator. Standard consensus algorithms like Paxos enforce a total order through stable leader election, which is overly restrictive for monotonic state. Conversely, gossip protocols provide eventual consistency but lack a deterministic commit barrier. Thus the system cannot mathematically guarantee when a value has fully converged.
 
-Suffren implements a Grow-Only Counter (`GCounter`) using Lattice Agreement. It trades the O(N log N) messaging overhead of gossip for an O(N^2) worst-case complexity to guarantee a strict synchronization barrier. Any node can increment its local state and propose it. When a quorum agrees, every node deterministically adopts the merged value.
+Suffren implements a Grow-Only Counter (`GCounter`) using Lattice Agreement. It trades the O(N log N) messaging overhead of gossip for an O(N^3) worst-case complexity to guarantee a strict synchronization barrier. Any node can increment its local state and propose it. When a quorum agrees, every node deterministically adopts the merged value.
 
 ## Architecture and Role Isolation
 
