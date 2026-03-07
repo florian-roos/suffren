@@ -29,15 +29,20 @@ func NewLearner(nodeId crdt.NodeId, network Network, bottom crdt.Lattice, onLear
 func (l *Learner) HandleLearn(msg protocol.Message) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	// Only update and re-broadcast if the learned value strictly grows to avoid infinite loops.
+
+	// Ignore stale LEARNs (incoming value is strictly below our already-learned state).
+	if !l.learnedValue.IsIn(msg.Payload.Value) {
+		return
+	}
+
+	// Re-broadcast only when the value strictly grew, to break gossip loops.
 	if l.learnedValue.StrictlyIsIn(msg.Payload.Value) {
 		l.learnedValue = msg.Payload.Value
 		msgToBroadcast := protocol.Message{
 			Sender: l.nodeId,
 			Payload: protocol.Command{
-				Type:      protocol.Learn,
-				Value:     l.learnedValue,
-				SeqNumber: msg.Payload.SeqNumber,
+				Type:  protocol.Learn,
+				Value: l.learnedValue,
 			},
 		}
 		go func() {
@@ -47,9 +52,12 @@ func (l *Learner) HandleLearn(msg protocol.Message) {
 				log.Printf("[Learner:%s] LEARN broadcast failed: %v", l.nodeId, err)
 			}
 		}()
-		if l.onLearn != nil {
-			//Notify the application that a new value has been learned.
-			go l.onLearn(l.learnedValue)
-		}
+	}
+
+	// Always notify the application (even for equal values) so that a
+	// pending Value()/Increment() whose proposedValue == learnedValue is unblocked.
+	if l.onLearn != nil {
+		currentLearned := l.learnedValue
+		go l.onLearn(currentLearned)
 	}
 }
