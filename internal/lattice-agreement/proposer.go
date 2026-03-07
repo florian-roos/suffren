@@ -69,7 +69,7 @@ func (p *Proposer) Propose(value crdt.Lattice) {
 func (p *Proposer) HandleAck(msg protocol.Message) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if msg.Payload.Value == p.proposedValue {
+	if msg.Payload.Value.Equals(p.proposedValue) {
 		p.acksReceived = append(p.acksReceived, true)
 		p.checkAndHandleQuorum()
 	}

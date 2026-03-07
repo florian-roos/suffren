@@ -5,4 +5,6 @@ type Lattice interface {
 	IsIn(other Lattice) bool
 	StrictlyIsIn(other Lattice) bool
 	Bottom() Lattice
+	MergeInPlace(other Lattice)
+	Equals(other Lattice) bool
 }
