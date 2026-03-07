@@ -14,11 +14,9 @@ To guarantee consistency during concurrent updates and network partitions, each 
 
 The proposer initiates agreement rounds. It maintains `bufferedValue`, which is the join (âŠ”) of all values seen during the current round.
 
-- The proposer broadcasts `PROPOSE(bufferedValue, seqNumber)`.
+- The proposer broadcasts `PROPOSE(bufferedValue)`.
 - If a quorum of `ACK`s is received, the state is committed, and it broadcasts `LEARN`.
-- If a `NACK(payload)` is received, it merges the missing state into its buffer. Since the system must work even with a partition of the network, the proposer waits for a quorum of responses, increments `seqNumber`, and re-proposes.
-
-To ensure correct state for late-joining or partitioned nodes, the proposer periodically re-proposes its state.
+- If a `NACK(payload)` is received, it merges the missing state into its buffer. Since the system must work even with a partition of the network, the proposer waits for a quorum of responses and re-proposes.
 
 ### 2. Acceptor
 
@@ -51,7 +49,7 @@ The underlying object is a `GCounter` mapped to a bounded join-semilattice (C, â
 
 ### Message Complexity
 
-- **Worst case:** O(N^2). If all N nodes propose simultaneously, the system does not degrade to O(N^3) because quorum intersection ensures that NACK payloads collapse the divergent states rapidly.
+- **Worst case:** O(N^3) if all N nodes propose simultaneously. (Some optimizations will be further implemented to reduce this complexity)
 
 ### Implementation and Testing
 
@@ -73,8 +71,8 @@ go run cmd/suffren/main.go 8003
 
 ```text
 s : Start the node (bind TCP port, begin protocol)
-i : Increment local counter and propose to cluster
-v : Read current observed value (wait-free)
+i : Propose local increment (blocks until quorum LEARN barrier is reached)
+v : Initiate quorum read (linearizable state guaranteed)
 q : Graceful shutdown
 ```
 
@@ -87,7 +85,7 @@ cmd/
 internal/
   crdt/              # Lattice interface + GCounter implementation
   lattice-agreement/ # Proposer, Acceptor, Learner, and MessageRouter (one actor per role mailbox model)
-  node/              # Start/Stop, periodic proposal, round-timeout
+  node/              # Start/Stop a node of the GCounter
   p2p/               # TCP transport (Server, Client, Connection)
   protocol/          # Message and Command wire types
 
