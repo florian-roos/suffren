@@ -162,27 +162,3 @@ func noNacks(acks []bool) bool {
 	}
 	return true
 }
-
-// IsRoundStuck returns true if a round has been in flight longer than timeout.
-func (p *Proposer) IsRoundStuck(timeout time.Duration) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.roundStartedAt.IsZero() {
-		return false // no round in flight
-	}
-	if !p.IsProposing && time.Since(p.roundStartedAt) <= timeout {
-		return false // round completed cleanly
-	}
-	return time.Since(p.roundStartedAt) > timeout
-}
-
-// IsRoundInFlight returns true if a round is currently proposing
-// and has not yet timed out.
-func (p *Proposer) IsRoundInFlight(timeout time.Duration) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.roundStartedAt.IsZero() || p.IsProposing == false {
-		return false
-	}
-	return time.Since(p.roundStartedAt) <= timeout
-}

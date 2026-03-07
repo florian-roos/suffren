@@ -6,9 +6,7 @@ import (
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/protocol"
 	"suffren/pkg/config"
-	"suffren/pkg/utils"
 	"sync"
-	"time"
 )
 
 type NetworkService interface {
@@ -18,28 +16,26 @@ type NetworkService interface {
 }
 
 type Node struct {
-	Id            crdt.NodeId
-	Port          string
-	Network       NetworkService
-	peers         map[crdt.NodeId]string
-	la            *latticeagreement.LatticeAgreement
-	getLocalValue func() crdt.Lattice // snapshot of local value to ensure thread safety.
-	cfg           *config.Config
-	done          chan struct{}
-	stopOnce      sync.Once
-	wg            sync.WaitGroup
+	Id       crdt.NodeId
+	Port     string
+	Network  NetworkService
+	peers    map[crdt.NodeId]string
+	la       *latticeagreement.LatticeAgreement
+	cfg      *config.Config
+	done     chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
-func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, la *latticeagreement.LatticeAgreement, getLocalValue func() crdt.Lattice, cfg *config.Config) *Node {
+func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, la *latticeagreement.LatticeAgreement, cfg *config.Config) *Node {
 	n := Node{
-		Id:            nodeId,
-		Port:          port,
-		Network:       network,
-		peers:         peers,
-		la:            la,
-		getLocalValue: getLocalValue,
-		cfg:           cfg,
-		done:          make(chan struct{}),
+		Id:      nodeId,
+		Port:    port,
+		Network: network,
+		peers:   peers,
+		la:      la,
+		cfg:     cfg,
+		done:    make(chan struct{}),
 	}
 
 	return &n
@@ -52,7 +48,6 @@ func (n *Node) Start() error {
 		n.la.Start()
 		n.wg.Add(2)
 		go n.handleIncomingMsgChannel(incomingMsgChan)
-		go n.periodicPropose() // Periodic propose to ensure late-joining nodes can catch up
 		return nil
 	} else {
 		log.Printf("[ERROR] Node cannot listen to the network: %v\n", err)
@@ -93,31 +88,6 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 					n.la.MessageRouter.HandleIncomingMessage(m)
 				}
 			}(msg)
-		}
-	}
-}
-
-func (n *Node) periodicPropose() {
-	defer n.wg.Done()
-	ticker := time.NewTicker(n.cfg.Node.ProposalInterval)
-	defer ticker.Stop()
-	for {
-		jitteredTimeout := n.cfg.Node.RoundTimeout + utils.Jitter(n.cfg.Node.RoundTimeout)
-		select {
-
-		case <-n.done:
-			return
-		case <-ticker.C:
-			switch {
-			case n.la.Proposer.IsRoundStuck(jitteredTimeout):
-				log.Printf("[INFO] Round timed out after %v. Reproposing", jitteredTimeout)
-				n.la.Proposer.Propose(n.getLocalValue())
-			case n.la.Proposer.IsRoundInFlight(n.cfg.Node.RoundTimeout):
-				// Round is healthy for now
-			default:
-				// No round in flight, normal periodic propose
-				n.la.Proposer.Propose(n.getLocalValue())
-			}
 		}
 	}
 }

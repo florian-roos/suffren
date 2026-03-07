@@ -33,10 +33,19 @@ func main() {
 			}
 			fmt.Println("Node started and connected to cluster.")
 		case "i":
-			node.Increment()
-			fmt.Println("Incremented. Value:", node.Value())
+			value, ok := node.Increment()
+			if ok {
+				fmt.Println("Incremented. Value:", value)
+			} else {
+				fmt.Println("Failed to increment.")
+			}
 		case "v":
-			fmt.Println("Value:", node.Value())
+			value, ok := node.Value()
+			if ok {
+				fmt.Println("Value:", value)
+			} else {
+				fmt.Println("Failed to get value.")
+			}
 		case "q":
 			node.Stop()
 			return
