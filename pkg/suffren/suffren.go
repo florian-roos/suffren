@@ -1,7 +1,7 @@
 package suffren
 
 import (
-	"log"
+	"log/slog"
 	"suffren/internal/crdt"
 	latticeagreement "suffren/internal/lattice-agreement"
 	"suffren/internal/node"
@@ -72,12 +72,12 @@ func (s *Suffren) Start() error {
 	for time.Now().Before(deadline) {
 		_, ok := s.Value()
 		if ok {
-			log.Printf("[Suffren] Startup sync complete")
+			slog.Info("Startup sync complete")
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	log.Printf("[Suffren] WARNING: startup sync timed out. Proceeding with local state")
+	slog.Warn("Startup sync timed out. Proceeding with local state")
 	return nil
 }
 

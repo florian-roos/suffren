@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -22,7 +22,7 @@ func Retry(config RetryConfig, fn func() error) error {
 		}
 
 		lastErr = err
-		log.Printf("[RETRY] Attempt %d/%d failed. Retry in %v: %v", attempt, config.MaxAttempts, delay, lastErr)
+		slog.Warn("Retry attempt failed", "attempt", attempt, "maxAttempts", config.MaxAttempts, "delay", delay, "error", lastErr)
 
 		if attempt < config.MaxAttempts {
 			time.Sleep(delay)

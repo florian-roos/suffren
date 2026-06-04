@@ -2,7 +2,7 @@ package p2p
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"suffren/internal/protocol"
 	"sync"
@@ -37,7 +37,7 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 	err := conn.Send(msg)
 	if err != nil {
 		// Connection is stale (peer restarted). Remove it and retry once.
-		log.Printf("[WARN] Send to %s failed (stale connection), reconnecting: %v", targetAddr, err)
+		slog.Warn("Send failed (stale connection), reconnecting", "targetAddr", targetAddr, "error", err)
 		c.mu.Lock()
 		delete(c.pool, targetAddr)
 		c.mu.Unlock()
@@ -50,7 +50,7 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 		}
 		retryErr := conn.Send(msg)
 		if retryErr != nil {
-			log.Printf("[ERROR] Retry send to %s also failed: %v", targetAddr, retryErr)
+			slog.Error("Retry send also failed", "targetAddr", targetAddr, "error", retryErr)
 			c.mu.Lock()
 			delete(c.pool, targetAddr)
 			c.mu.Unlock()
@@ -67,7 +67,7 @@ func (c *Client) connect(targetAddr string) (*Connection, error) {
 	if err != nil {
 		c.mu.Lock()
 		if _, alreadyDown := c.knownDown[targetAddr]; !alreadyDown {
-			log.Printf("[WARN] %s unreachable — suppressing further warnings until it recovers\n", targetAddr)
+			slog.Warn("Peer unreachable — suppressing further warnings until it recovers", "targetAddr", targetAddr)
 			c.knownDown[targetAddr] = struct{}{}
 		}
 		c.mu.Unlock()
@@ -78,7 +78,7 @@ func (c *Client) connect(targetAddr string) (*Connection, error) {
 
 	c.mu.Lock()
 	if _, wasDown := c.knownDown[targetAddr]; wasDown {
-		log.Printf("[INFO] Reconnected to %s\n", targetAddr)
+		slog.Info("Reconnected to peer", "targetAddr", targetAddr)
 		delete(c.knownDown, targetAddr)
 	}
 	c.pool[targetAddr] = conn
@@ -94,10 +94,10 @@ func (c *Client) Close() error {
 	for addr, conn := range c.pool {
 		err := conn.Close()
 		if err != nil {
-			log.Printf("[ERROR] Failure in closing connection to %s: %v\n", addr, err)
+			slog.Error("Failure in closing connection", "addr", addr, "error", err)
 			return err
 		}
-		log.Printf("[CLIENT] Closed connection to %s\n", addr)
+		slog.Info("Closed connection", "addr", addr)
 	}
 
 	c.pool = make(map[string]*Connection)

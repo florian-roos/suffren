@@ -1,7 +1,7 @@
 package latticeagreement
 
 import (
-	"log"
+	"log/slog"
 	"suffren/internal/crdt"
 	"suffren/internal/protocol"
 	"sync"
@@ -49,7 +49,7 @@ func (l *Learner) HandleLearn(msg protocol.Message) {
 			err := l.network.BroadcastToOthers(msgToBroadcast, l.nodeId)
 			if err != nil {
 				// Not fatal: the periodic proposer will re-converge the cluster.
-				log.Printf("[Learner:%s] LEARN broadcast failed: %v", l.nodeId, err)
+				slog.Error("LEARN broadcast failed", "nodeId", l.nodeId, "error", err)
 			}
 		}()
 	}

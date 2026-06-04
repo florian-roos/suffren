@@ -1,7 +1,7 @@
 package latticeagreement
 
 import (
-	"log"
+	"log/slog"
 	"suffren/internal/protocol"
 	"suffren/pkg/config"
 	"sync"
@@ -44,7 +44,7 @@ func (r *MessageRouter) HandleIncomingMessage(msg protocol.Message) {
 	case protocol.Learn:
 		target = r.learnerMailbox
 	default:
-		log.Printf("[ERROR] Received message with unknown type: %v", msg)
+		slog.Error("Received message with unknown type", "message", msg)
 		return
 	}
 	select {
@@ -52,7 +52,7 @@ func (r *MessageRouter) HandleIncomingMessage(msg protocol.Message) {
 		//Message successfully routed to the right mailbox.
 	default:
 		// Mailbox is full, dropping the message to avoid blocking. The periodic proposer will re-converge the cluster, so this is not fatal.
-		// log.Printf("[WARN] Mailbox for %v is full, dropping message: %v", msg.Payload.Type, msg)
+		// slog.Warn("Mailbox is full, dropping message", "type", msg.Payload.Type, "message", msg)
 	}
 }
 
@@ -70,7 +70,7 @@ func (r *MessageRouter) runProposer() {
 				r.proposer.HandleNack(msg)
 			default:
 				//Should never happen since HandleIncomingMessage already filters
-				log.Printf("[ERROR] Proposer received unexpected message type: %v", msg)
+				slog.Error("Proposer received unexpected message type", "message", msg)
 			}
 
 		}

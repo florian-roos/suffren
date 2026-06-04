@@ -2,8 +2,8 @@ package p2p
 
 import (
 	"encoding/gob"
-	"suffren/internal/protocol"
 	"net"
+	"suffren/internal/protocol"
 )
 
 type Connection struct {

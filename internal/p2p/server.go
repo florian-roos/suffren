@@ -3,7 +3,7 @@ package p2p
 import (
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"suffren/internal/protocol"
@@ -40,11 +40,11 @@ func (s *Server) Listen() (<-chan protocol.Message, error) {
 	s.listener, err = net.Listen("tcp", ":"+s.port)
 
 	if err != nil {
-		log.Printf("[ERROR] Failed to start server: %v\n", err)
+		slog.Error("Failed to start server", "error", err)
 		return nil, err
 	}
 
-	log.Printf("[SERVER] Listening on port %s\n", s.port)
+	slog.Info("Listening", "port", s.port)
 	msgChanel := make(chan protocol.Message, MsgChanSize)
 	s.wg.Add(1)
 	go func() {
@@ -53,10 +53,10 @@ func (s *Server) Listen() (<-chan protocol.Message, error) {
 			conn, err := s.listener.Accept()
 			if err != nil {
 				if isClosingNetwork(err) {
-					log.Printf("[SERVER] Shutting down server on port %s\n", s.port)
+					slog.Info("Shutting down server", "port", s.port)
 					return
 				}
-				log.Printf("[ERROR] Failed to accept connection%v\n", err)
+				slog.Error("Failed to accept connection", "error", err)
 				continue
 			}
 			s.connections <- NewConnection(conn)
@@ -93,7 +93,7 @@ func (s *Server) handleConnection(msgChanel chan protocol.Message) {
 				return
 			}
 			if !isClosingNetwork(err) {
-				log.Printf("[WARN] Lost connection to peer: %v\n", err)
+				slog.Warn("Lost connection to peer", "error", err)
 				return
 			}
 		}
@@ -114,13 +114,13 @@ func isClosingNetwork(err error) bool {
 }
 
 func (s *Server) Close() error {
-	log.Println("[SERVER] Closing...")
+	slog.Info("Closing server...")
 	close(s.done)
 
 	if s.listener != nil {
 		err := s.listener.Close()
 		if err != nil {
-			log.Printf("[ERROR] Closing listener : %v", err)
+			slog.Error("Closing listener", "error", err)
 			return err
 		}
 	}
@@ -130,7 +130,7 @@ func (s *Server) Close() error {
 		err := conn.Close()
 
 		if err != nil {
-			log.Printf("[ERROR] Closing connection : %v", err)
+			slog.Error("Closing connection", "error", err)
 			return err
 		}
 	}
@@ -141,6 +141,6 @@ func (s *Server) Close() error {
 
 	s.wg.Wait()
 
-	log.Println("[SERVER] Closed gracefully")
+	slog.Info("Server closed gracefully")
 	return nil
 }
