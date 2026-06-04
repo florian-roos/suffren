@@ -2,8 +2,8 @@ package latticeagreement
 
 import (
 	"runtime"
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 	"sync"
 	"testing"
 	"time"

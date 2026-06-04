@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/protocol"
 	"sync"
 )
 

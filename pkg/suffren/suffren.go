@@ -2,11 +2,11 @@ package suffren
 
 import (
 	"log/slog"
-	"suffren/internal/crdt"
-	latticeagreement "suffren/internal/lattice-agreement"
-	"suffren/internal/node"
-	"suffren/internal/p2p"
-	"suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/crdt"
+	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
+	"github.com/florian-roos/suffren/internal/node"
+	"github.com/florian-roos/suffren/internal/p2p"
+	"github.com/florian-roos/suffren/pkg/config"
 	"sync"
 	"time"
 )

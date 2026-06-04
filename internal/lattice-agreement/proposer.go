@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
 // Proposer implements the proposer role of Lattice Agreement.

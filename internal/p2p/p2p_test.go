@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
 // helper: get a free port from the OS

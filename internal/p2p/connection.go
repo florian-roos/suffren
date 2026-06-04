@@ -3,7 +3,7 @@ package p2p
 import (
 	"encoding/gob"
 	"net"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
 type Connection struct {

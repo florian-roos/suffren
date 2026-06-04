@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
 type Network struct {

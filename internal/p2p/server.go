@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/protocol"
 	"sync"
 )
 

@@ -1,9 +1,9 @@
 package latticeagreement
 
 import (
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
-	"suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
+	"github.com/florian-roos/suffren/pkg/config"
 )
 
 type Network interface {
