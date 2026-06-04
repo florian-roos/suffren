@@ -90,15 +90,17 @@ func (s *Suffren) Increment() (uint64, bool) {
 	done := make(chan *crdt.GCounter, 1)
 
 	s.mu.Lock()
-	s.localCounter.Increment(s.node.Id)
 	proposed := s.localCounter.Copy()
 	s.pending = &pendingOp{proposedValue: proposed, done: done}
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
 	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
-
 	s.mu.Lock()
+	// We increment only after learning the value that contains the proposed increment (to avoid the case where the increment is proposed but not included in the learned value, and then we timeout).
+	if ok {
+		s.localCounter.MergeInPlace(value)
+	}
 	s.pending = nil
 	s.mu.Unlock()
 
