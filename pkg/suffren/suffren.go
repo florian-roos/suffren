@@ -93,7 +93,7 @@ func (s *Suffren) Increment() (uint64, bool) {
 	s.localCounter.Increment(s.node.Id)
 	proposed := s.localCounter.Copy()
 	s.pending = &pendingOp{proposedValue: proposed, done: done}
-	s.la.Proposer.Propose(s.localCounter)
+	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
 	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
