@@ -53,7 +53,7 @@ The underlying object is a `GCounter` mapped to a bounded join-semilattice (C, â
 
 ### Implementation and Testing
 
-Implemented in Go 1.21+ using strictly the standard library. To verify the safety properties, the system is tested against simulated network failures. The tests can be run with the command : go test -race ./...
+Implemented in Go 1.24+ using strictly the standard library. To verify the safety properties, the system is tested against simulated network failures. The tests can be run with the command : go test -race ./...
 
 ## Getting Started
 
