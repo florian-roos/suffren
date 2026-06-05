@@ -9,7 +9,7 @@ type GCounter struct {
 }
 
 func NewGCounter(nodeIds []NodeId) *GCounter {
-	counts := make(map[NodeId]uint64)
+	counts := make(map[NodeId]uint64, len(nodeIds)) 
 	for _, nodeId := range nodeIds {
 		counts[nodeId] = 0
 	}
@@ -95,7 +95,9 @@ func (g *GCounter) Equals(other Lattice) bool {
 
 // Copy returns a deep copy of g with no shared memory.
 func (g *GCounter) Copy() *GCounter {
-	result := NewGCounter([]NodeId{})
+	result := &GCounter{
+		Counts: make(map[NodeId]uint64, len(g.Counts)),
+	}
 	for nodeId, count := range g.Counts {
 		result.Counts[nodeId] = count
 	}
