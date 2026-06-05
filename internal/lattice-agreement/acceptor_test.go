@@ -44,6 +44,12 @@ func (m *mockNetwork) BroadcastToOthers(msg protocol.Message, senderId crdt.Node
 	return m.sendErr
 }
 
+func (m *mockNetwork) ClearBroadcasts() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.broadcasted = nil
+}
+
 func (m *mockNetwork) lastSentTo(nodeId crdt.NodeId) (protocol.Message, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
