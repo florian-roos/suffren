@@ -1,11 +1,11 @@
 package node
 
 import (
-	"log"
-	"suffren/internal/crdt"
-	latticeagreement "suffren/internal/lattice-agreement"
-	"suffren/internal/protocol"
-	"suffren/pkg/config"
+	"log/slog"
+	"github.com/florian-roos/suffren/internal/crdt"
+	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
+	"github.com/florian-roos/suffren/internal/protocol"
+	"github.com/florian-roos/suffren/pkg/config"
 	"sync"
 )
 
@@ -50,7 +50,7 @@ func (n *Node) Start() error {
 		go n.handleIncomingMsgChannel(incomingMsgChan)
 		return nil
 	} else {
-		log.Printf("[ERROR] Node cannot listen to the network: %v\n", err)
+		slog.Error("Node cannot listen to the network", "error", err)
 		return err
 	}
 }
@@ -59,7 +59,7 @@ func (n *Node) SendTo(nodeId crdt.NodeId, cmd protocol.Command) error {
 	msg := protocol.NewMessage(n.Id, cmd)
 	err := n.Network.Send(nodeId, msg)
 	if err != nil {
-		log.Printf("[ERROR] Node cannot send message to %s: %v\n", nodeId, err)
+		slog.Error("Node cannot send message", "to", nodeId, "error", err)
 		return err
 	}
 	return nil
@@ -70,11 +70,11 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 	for {
 		select {
 		case <-n.done:
-			log.Printf("[NODE] Shutting down node id %s\n", n.Id)
+			slog.Info("Shutting down node", "nodeId", n.Id)
 			return
 		case msg, ok := <-incomingMsgChan:
 			if !ok {
-				log.Printf("[NODE] Incoming message channel closed for node id %s\n", n.Id)
+				slog.Info("Incoming message channel closed", "nodeId", n.Id)
 				return
 			}
 			n.wg.Add(1)
@@ -82,7 +82,7 @@ func (n *Node) handleIncomingMsgChannel(incomingMsgChan <-chan protocol.Message)
 				defer n.wg.Done()
 				select {
 				case <-n.done:
-					log.Printf("[NODE] Stopping message handler for node id %s\n", n.Id)
+					slog.Info("Stopping message handler", "nodeId", n.Id)
 					return
 				default:
 					n.la.MessageRouter.HandleIncomingMessage(m)

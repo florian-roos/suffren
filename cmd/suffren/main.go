@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"suffren/internal/crdt"
-	"suffren/pkg/config"
-	"suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/pkg/config"
+	"github.com/florian-roos/suffren/pkg/suffren"
 )
 
 // CLI entry point for the Suffren application.

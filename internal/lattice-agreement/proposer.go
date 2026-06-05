@@ -1,11 +1,11 @@
 package latticeagreement
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
 // Proposer implements the proposer role of Lattice Agreement.
@@ -60,7 +60,7 @@ func (p *Proposer) Propose(value crdt.Lattice) {
 	go func() {
 		err := p.network.Broadcast(msg)
 		if err != nil {
-			log.Printf("[Proposer:%s] PROPOSE broadcast failed: %v", p.nodeId, err)
+			slog.Error("PROPOSE broadcast failed", "nodeId", p.nodeId, "error", err)
 		}
 	}()
 }
@@ -85,8 +85,7 @@ func (p *Proposer) HandleNack(msg protocol.Message) {
 		p.bufferedValue = p.bufferedValue.Join(msg.Payload.Value)
 		p.checkAndHandleQuorum()
 	} else {
-		log.Printf("[Proposer:%s] NACK ignored: stale value=%v (current=%v)",
-			p.nodeId, msg.Payload.Value, p.proposedValue)
+		slog.Debug("NACK ignored: stale value", "nodeId", p.nodeId, "value", msg.Payload.Value, "current", p.proposedValue)
 	}
 }
 
@@ -112,7 +111,7 @@ func (p *Proposer) checkAndHandleQuorum() {
 				err := p.network.Broadcast(msg)
 				if err != nil {
 					// Not fatal: the periodic proposer will re-converge the cluster.
-					log.Printf("[Proposer:%s] LEARN broadcast failed: %v", p.nodeId, err)
+					slog.Error("LEARN broadcast failed", "nodeId", p.nodeId, "error", err)
 				}
 			}()
 		} else {
@@ -132,7 +131,7 @@ func (p *Proposer) checkAndHandleQuorum() {
 				err := p.network.Broadcast(msg)
 				if err != nil {
 					// Not fatal: the periodic proposer will re-converge the cluster.
-					log.Printf("[Proposer:%s] PROPOSE broadcast failed: %v", p.nodeId, err)
+					slog.Error("PROPOSE broadcast failed", "nodeId", p.nodeId, "error", err)
 				}
 			}()
 		}

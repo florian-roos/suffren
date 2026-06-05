@@ -1,6 +1,6 @@
 package protocol
 
-import "suffren/internal/crdt"
+import "github.com/florian-roos/suffren/internal/crdt"
 
 type Message struct {
 	Sender  crdt.NodeId

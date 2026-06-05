@@ -1,9 +1,9 @@
 package latticeagreement
 
 import (
-	"log"
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"log/slog"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 	"sync"
 )
 
@@ -45,7 +45,7 @@ func (a *Acceptor) HandlePropose(msg protocol.Message) {
 		go func() {
 			err := a.network.Send(msg.Sender, replyMsg)
 			if err != nil {
-				log.Printf("[ERROR] Failed to send ACK message %v to %s: %v\n", replyMsg, msg.Sender, err)
+				slog.Error("Failed to send ACK message", "replyMsg", replyMsg, "to", msg.Sender, "error", err)
 			}
 		}()
 	} else {
@@ -61,7 +61,7 @@ func (a *Acceptor) HandlePropose(msg protocol.Message) {
 		go func() {
 			err := a.network.Send(msg.Sender, replyMsg)
 			if err != nil {
-				log.Printf("[ERROR] Failed to send NACK message %v to %s: %v\n", replyMsg, msg.Sender, err)
+				slog.Error("Failed to send NACK message", "replyMsg", replyMsg, "to", msg.Sender, "error", err)
 			}
 		}()
 	}

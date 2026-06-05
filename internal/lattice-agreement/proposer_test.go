@@ -1,8 +1,8 @@
 package latticeagreement
 
 import (
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 	"testing"
 )
 

@@ -1,8 +1,8 @@
 package suffren
 
 import (
-	"suffren/internal/crdt"
-	"suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/pkg/config"
 	"sync"
 	"testing"
 	"time"

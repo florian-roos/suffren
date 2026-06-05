@@ -1,10 +1,10 @@
 package node
 
 import (
-	"suffren/internal/crdt"
-	latticeagreement "suffren/internal/lattice-agreement"
-	"suffren/internal/protocol"
-	"suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/crdt"
+	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
+	"github.com/florian-roos/suffren/internal/protocol"
+	"github.com/florian-roos/suffren/pkg/config"
 	"sync"
 	"sync/atomic"
 	"testing"

@@ -1,12 +1,12 @@
 package suffren
 
 import (
-	"log"
-	"suffren/internal/crdt"
-	latticeagreement "suffren/internal/lattice-agreement"
-	"suffren/internal/node"
-	"suffren/internal/p2p"
-	"suffren/pkg/config"
+	"log/slog"
+	"github.com/florian-roos/suffren/internal/crdt"
+	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
+	"github.com/florian-roos/suffren/internal/node"
+	"github.com/florian-roos/suffren/internal/p2p"
+	"github.com/florian-roos/suffren/pkg/config"
 	"sync"
 	"time"
 )
@@ -72,12 +72,12 @@ func (s *Suffren) Start() error {
 	for time.Now().Before(deadline) {
 		_, ok := s.Value()
 		if ok {
-			log.Printf("[Suffren] Startup sync complete")
+			slog.Info("Startup sync complete")
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	log.Printf("[Suffren] WARNING: startup sync timed out. Proceeding with local state")
+	slog.Warn("Startup sync timed out. Proceeding with local state")
 	return nil
 }
 
@@ -90,15 +90,17 @@ func (s *Suffren) Increment() (uint64, bool) {
 	done := make(chan *crdt.GCounter, 1)
 
 	s.mu.Lock()
-	s.localCounter.Increment(s.node.Id)
 	proposed := s.localCounter.Copy()
 	s.pending = &pendingOp{proposedValue: proposed, done: done}
-	s.la.Proposer.Propose(s.localCounter)
+	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
 	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
-
 	s.mu.Lock()
+	// We increment only after learning the value that contains the proposed increment (to avoid the case where the increment is proposed but not included in the learned value, and then we timeout).
+	if ok {
+		s.localCounter.MergeInPlace(value)
+	}
 	s.pending = nil
 	s.mu.Unlock()
 

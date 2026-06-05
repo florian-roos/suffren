@@ -2,10 +2,10 @@ package p2p
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 
-	"suffren/internal/crdt"
-	"suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
 type Network struct {
@@ -65,22 +65,22 @@ func (n *Network) BroadcastToOthers(msg protocol.Message, senderId crdt.NodeId) 
 }
 
 func (n *Network) Close() error {
-	log.Println("[NETWORK] Closing network service...")
+	slog.Info("Closing network service...")
 
 	err := n.server.Close()
 
 	if err != nil {
-		log.Printf("[ERROR] Failed to close server: %v\n", err)
+		slog.Error("Failed to close server", "error", err)
 		//Continue to close client
 	}
 
 	err = n.client.Close()
 
 	if err != nil {
-		log.Printf("[ERROR] Failed to close client: %v\n", err)
+		slog.Error("Failed to close client", "error", err)
 		return err
 	}
 
-	log.Println("[NETWORK] Network service closed gracefully")
+	slog.Info("Network service closed gracefully")
 	return nil
 }
