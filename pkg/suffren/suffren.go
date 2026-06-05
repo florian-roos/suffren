@@ -2,13 +2,14 @@ package suffren
 
 import (
 	"log/slog"
+	"sync"
+	"time"
+
 	"github.com/florian-roos/suffren/internal/crdt"
 	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
 	"github.com/florian-roos/suffren/internal/node"
 	"github.com/florian-roos/suffren/internal/p2p"
 	"github.com/florian-roos/suffren/pkg/config"
-	"sync"
-	"time"
 )
 
 // pendingOp tracks the in-flight operation (Increment or Value) so that
@@ -91,6 +92,7 @@ func (s *Suffren) Increment() (uint64, bool) {
 
 	s.mu.Lock()
 	proposed := s.localCounter.Copy()
+	proposed.Increment(s.node.Id)
 	s.pending = &pendingOp{proposedValue: proposed, done: done}
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()

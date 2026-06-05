@@ -1,9 +1,10 @@
 package latticeagreement
 
 import (
+	"testing"
+
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/protocol"
-	"testing"
 )
 
 // Helpers
@@ -51,7 +52,7 @@ func TestProposer_bufferedValue_is_join_of_all_proposals_not_last(t *testing.T) 
 	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 5, "B": 0}))
 	waitForBroadcast(t, net, protocol.Propose)
 
-	net.broadcasted = nil // reset, focus on second proposal
+	net.ClearBroadcasts() // reset, focus on second proposal
 
 	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 0, "B": 3}))
 
@@ -84,9 +85,7 @@ func TestProposer_broadcasts_LEARN_with_bufferedValue_not_original_proposal(t *t
 	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0})
 	p.Propose(proposed)
 	waitForBroadcast(t, net, protocol.Propose)
-	net.mu.Lock()
-	net.broadcasted = nil
-	net.mu.Unlock()
+	net.ClearBroadcasts()
 
 	// NACK with a value that has B:7 (≥ proposed, so proposedValue.IsIn(nackValue))
 	nackValue := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 7})
@@ -136,7 +135,7 @@ func TestProposer_stale_ACK_for_old_value_is_ignored(t *testing.T) {
 	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 2, "B": 0}))
 	waitForBroadcast(t, net, protocol.Propose)
 
-	net.broadcasted = nil
+	net.ClearBroadcasts()
 
 	// Late ACKs from old round carry the old value — must be ignored
 	p.HandleAck(ack(oldValue))
@@ -196,9 +195,7 @@ func TestProposer_bufferedValue_accumulates_all_NACK_payloads_across_responses(t
 	proposed := newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 0, "C": 0})
 	p.Propose(proposed)
 	waitForBroadcast(t, net, protocol.Propose)
-	net.mu.Lock()
-	net.broadcasted = nil
-	net.mu.Unlock()
+	net.ClearBroadcasts()
 
 	// Two NACKs with disjoint missing components (both ≥ proposed)
 	p.HandleNack(nack(newTestGCounter(map[crdt.NodeId]uint64{"A": 1, "B": 5, "C": 0})))
@@ -233,7 +230,7 @@ func TestProposer_new_Propose_resets_round_and_invalidates_previous_quorum(t *te
 
 	// New Propose resets the round
 	p.Propose(newTestGCounter(map[crdt.NodeId]uint64{"A": 2, "B": 0}))
-	net.broadcasted = nil
+	net.ClearBroadcasts()
 
 	// Late ACK from old round (carries old value) — must be ignored
 	p.HandleAck(ack(oldValue))
