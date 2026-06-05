@@ -48,7 +48,10 @@ func (n *Network) Send(nodeId crdt.NodeId, msg protocol.Message) error {
 
 func (n *Network) Broadcast(msg protocol.Message) error {
 	for nodeId := range n.peers {
-		n.Send(nodeId, msg)
+		err := n.Send(nodeId, msg)
+		if err != nil {
+			slog.Debug("Broadcast send failed", "to", nodeId, "error", err)
+		}
 	}
 	return nil
 }
@@ -59,7 +62,10 @@ func (n *Network) BroadcastToOthers(msg protocol.Message, senderId crdt.NodeId) 
 		if nodeId == senderId {
 			continue
 		}
-		n.Send(nodeId, msg)
+		err := n.Send(nodeId, msg)
+		if err != nil {
+			slog.Debug("BroadcastToOthers send failed", "to", nodeId, "error", err)
+		}
 	}
 	return nil
 }

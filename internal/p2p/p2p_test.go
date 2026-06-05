@@ -16,7 +16,12 @@ func getFreePort() string {
 	if err != nil {
 		panic(err)
 	}
-	defer listener.Close()
+	defer func() {
+		closeErr := listener.Close()
+		if closeErr != nil {
+			panic("failed to close listener: " + closeErr.Error())
+		}
+	}()
 	port := strings.Split(listener.Addr().String(), ":")
 	return port[len(port)-1] // returns "36277" instead of "[::]:36277"
 }
@@ -94,6 +99,12 @@ func TestSendReceiveReply(t *testing.T) {
 		t.Fatal("timeout: no reply received on network1")
 	}
 
-	network1.Close()
-	network2.Close()
+	err1 := network1.Close()
+	if err1 != nil {
+		t.Errorf("failed to close network1: %v", err1)
+	}
+	err2 := network2.Close()
+	if err2 != nil {
+		t.Errorf("failed to close network2: %v", err2)
+	}
 }

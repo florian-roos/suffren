@@ -41,7 +41,10 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 		c.mu.Lock()
 		delete(c.pool, targetAddr)
 		c.mu.Unlock()
-		conn.Close()
+		closeErr := conn.Close()
+		if closeErr != nil {
+			slog.Debug("Error closing stale connection", "targetAddr", targetAddr, "error", closeErr)
+		}
 
 		// Retry with a fresh connection
 		conn, dialErr := c.connect(targetAddr)

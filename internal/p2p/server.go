@@ -72,7 +72,12 @@ func (s *Server) handleConnection(msgChanel chan protocol.Message) {
 	conn := <-s.connections
 
 	defer s.wg.Done()
-	defer conn.Close()
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			slog.Debug("Error closing connection", "error", err)
+		}
+	}()
 
 	s.mu.Lock()
 	s.activeConnections[conn] = struct{}{}

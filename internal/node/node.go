@@ -98,5 +98,8 @@ func (n *Node) Stop() {
 	})
 	n.wg.Wait()
 	n.la.Stop()
-	n.Network.Close()
+	err := n.Network.Close()
+	if err != nil {
+		slog.Error("Failed to close network", "error", err)
+	}
 }
