@@ -16,7 +16,6 @@ const MsgChanSize = 100
 type Server struct {
 	port              string
 	listener          net.Listener
-	connections       chan *Connection
 	done              chan struct{}
 	wg                sync.WaitGroup
 	activeConnections map[*Connection]struct{}
@@ -26,7 +25,6 @@ type Server struct {
 func NewServer(port string) *Server {
 	s := &Server{
 		port:              port,
-		connections:       make(chan *Connection, connChannelSize),
 		done:              make(chan struct{}),
 		wg:                sync.WaitGroup{},
 		activeConnections: make(map[*Connection]struct{}),
@@ -59,17 +57,15 @@ func (s *Server) Listen() (<-chan protocol.Message, error) {
 				slog.Error("Failed to accept connection", "error", err)
 				continue
 			}
-			s.connections <- NewConnection(conn)
 			s.wg.Add(1)
-			go s.handleConnection(msgChanel)
+			go s.handleConnection(NewConnection(conn), msgChanel)
 		}
 
 	}()
 	return msgChanel, nil
 }
 
-func (s *Server) handleConnection(msgChanel chan protocol.Message) {
-	conn := <-s.connections
+func (s *Server) handleConnection(conn *Connection, msgChanel chan protocol.Message) {
 
 	defer s.wg.Done()
 	defer func() {
@@ -141,8 +137,6 @@ func (s *Server) Close() error {
 	}
 
 	s.mu.Unlock()
-
-	close(s.connections)
 
 	s.wg.Wait()
 
