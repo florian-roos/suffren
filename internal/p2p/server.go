@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"net"
 	"strings"
-	"github.com/florian-roos/suffren/internal/protocol"
 	"sync"
+
+	"github.com/florian-roos/suffren/internal/protocol"
 )
 
-const connChannelSize = 100
 const MsgChanSize = 100
 
 type Server struct {
