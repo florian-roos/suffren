@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/pkg/config"
 	"github.com/florian-roos/suffren/pkg/suffren"
@@ -24,7 +27,13 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		switch scanner.Text() {
+		text := scanner.Text()
+		if text == "" {
+			continue
+		}
+
+		parts := strings.Fields(text)
+		switch parts[0] {
 		case "s":
 			fmt.Printf("Node starting...\n")
 			err := node.Start()
@@ -33,9 +42,19 @@ func main() {
 				continue
 			}
 			fmt.Println("Node started")
-			fmt.Println("Commands: [i]ncrement, [v]alue, [q]uit")
+			fmt.Println("Commands: [i] <value>, [v]alue, [q]uit")
 		case "i":
-			value, ok := node.Increment()
+			incValue := uint64(1)
+			if len(parts) > 1 {
+				parsed, err := strconv.ParseUint(parts[1], 10, 64)
+				if err == nil {
+					incValue = parsed
+				} else {
+					fmt.Printf("Invalid increment value: %v\n", err)
+					continue
+				}
+			}
+			value, ok := node.Increment(incValue)
 			if ok {
 				fmt.Println("Incremented. Value:", value)
 			} else {

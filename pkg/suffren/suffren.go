@@ -82,9 +82,9 @@ func (s *Suffren) Start() error {
 	return nil
 }
 
-// Increment increments the local counter and proposes the new value to the cluster.
+// Increment increments the local counter by the given value and proposes the new value to the cluster.
 // Blocks until a quorum LEARN containing the increment is received or timeout.
-func (s *Suffren) Increment() (uint64, bool) {
+func (s *Suffren) Increment(value uint64) (uint64, bool) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 
@@ -92,22 +92,22 @@ func (s *Suffren) Increment() (uint64, bool) {
 
 	s.mu.Lock()
 	proposed := s.localCounter.Copy()
-	proposed.Increment(s.node.Id)
+	proposed.Increment(s.node.Id, value)
 	s.pending = &pendingOp{proposedValue: proposed, done: done}
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
-	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
 	s.mu.Lock()
 	// We increment only after learning the value that contains the proposed increment (to avoid the case where the increment is proposed but not included in the learned value, and then we timeout).
 	if ok {
-		s.localCounter.MergeInPlace(value)
+		s.localCounter.MergeInPlace(learned)
 	}
 	s.pending = nil
 	s.mu.Unlock()
 
 	if ok {
-		return value.Value(), true
+		return learned.Value(), true
 	}
 	return 0, false
 }

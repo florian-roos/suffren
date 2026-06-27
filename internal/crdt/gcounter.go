@@ -16,8 +16,8 @@ func NewGCounter(nodeIds []NodeId) *GCounter {
 	return &GCounter{Counts: counts}
 }
 
-func (g *GCounter) Increment(nodeId NodeId) {
-	g.Counts[nodeId]++
+func (g *GCounter) Increment(nodeId NodeId, value uint64) {
+	g.Counts[nodeId] += value
 }
 
 func (g *GCounter) Value() uint64 {

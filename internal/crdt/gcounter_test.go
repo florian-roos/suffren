@@ -24,13 +24,13 @@ func TestGCounter_NewGCounter_initializes_all_to_zero(t *testing.T) {
 
 func TestGCounter_Increment_increases_correct_node(t *testing.T) {
 	// GIVEN: a 2-node GCounter
-	// WHEN: we call Increment() on a node
-	// THEN: the count of this node is 1 and the count of the other one is 0
+	// WHEN: we call Increment(3) on a node
+	// THEN: the count of this node is 3 and the count of the other one is 0
 	g := NewGCounter([]NodeId{"node1", "node2"})
-	g.Increment("node1")
+	g.Increment("node1", 3)
 
-	if g.Counts["node1"] != 1 {
-		t.Errorf("Expected count 1 for node1, got %d", g.Counts["node1"])
+	if g.Counts["node1"] != 3 {
+		t.Errorf("Expected count 3 for node1, got %d", g.Counts["node1"])
 	}
 	if g.Counts["node2"] != 0 {
 		t.Errorf("Expected count 0 for node2, got %d", g.Counts["node2"])
