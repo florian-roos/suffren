@@ -10,7 +10,7 @@ func BenchmarkSoloIncrement(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, ok := s1.Increment()
+		_, ok := s1.Increment(1)
 		if !ok {
 			b.Fatalf("Increment %d timed out", i)
 		}
@@ -27,7 +27,7 @@ func BenchmarkConcurrentLocalIncrements(b *testing.B) {
 	// RunParallel exexutes the function in multiple goroutines
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, ok := s1.Increment()
+			_, ok := s1.Increment(1)
 			if !ok {
 				b.Error("Increment timed out")
 			}
@@ -46,7 +46,7 @@ func BenchmarkClusterIncrements(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			node := nodes[i%3]
-			_, ok := node.Increment()
+			_, ok := node.Increment(1)
 			if !ok {
 				b.Error("Increment timed out")
 			}
@@ -60,8 +60,8 @@ func BenchmarkValueRead(b *testing.B) {
 	peers := peers3bis()
 	s1, _, _ := startCluster(b, peers)
 
-	// We incremente one time to have a value
-	s1.Increment()
+	// We increment one time to have a value
+	s1.Increment(1)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

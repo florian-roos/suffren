@@ -23,13 +23,13 @@ func TestSuffren_node_initial_value_is_zero(t *testing.T) {
 
 func TestSuffren_increment_increses_value(t *testing.T) {
 	// GIVEN: a 3-node cluster
-	// WHEN:  we call Increment() n times on one node
+	// WHEN:  we call Increment(1) n times on one node
 	// THEN:  Value() returns n
 	s1, _, _ := startCluster(t, peers3bis())
 
 	increments := 5
 	for i := 0; i < increments; i++ {
-		_, ok := s1.Increment()
+		_, ok := s1.Increment(1)
 		if !ok {
 			t.Fatalf("Increment() #%d timed out", i+1)
 		}
@@ -57,9 +57,9 @@ func TestSuffren_concurrent_increments_converge_to_the_same_value(t *testing.T) 
 
 	for i := 0; i < 100; i++ {
 		wg.Add(3)
-		go func() { defer wg.Done(); s1.Increment() }()
-		go func() { defer wg.Done(); s2.Increment() }()
-		go func() { defer wg.Done(); s3.Increment() }()
+		go func() { defer wg.Done(); s1.Increment(1) }()
+		go func() { defer wg.Done(); s2.Increment(1) }()
+		go func() { defer wg.Done(); s3.Increment(1) }()
 	}
 
 	wg.Wait()
@@ -91,8 +91,8 @@ func TestSuffren_late_joining_node_catches_up(t *testing.T) {
 
 	// Increment a few times before the 3rd node starts
 	for i := 0; i < 10; i++ {
-		s1.Increment()
-		s2.Increment()
+		s1.Increment(1)
+		s2.Increment(1)
 	}
 
 	s3 := NewSuffren(crdt.NodeId("N3"), peers["N3"][len("localhost:"):], peers, cfg)

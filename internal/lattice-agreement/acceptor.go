@@ -2,9 +2,10 @@ package latticeagreement
 
 import (
 	"log/slog"
+	"sync"
+
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/protocol"
-	"sync"
 )
 
 // Acceptor implements the acceptor role of Lattice Agreement.
