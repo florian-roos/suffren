@@ -83,17 +83,14 @@ func (cm *CounterMap) Equals(other Lattice) bool {
 	}
 	for key, counter := range cm.Counters {
 		otherCounter, exists := o.Counters[key]
-		if !exists {
-			return false
-		}
-		if !counter.Equals(otherCounter) {
+		if !exists || !counter.Equals(otherCounter) {
 			return false
 		}
 	}
 	return true
 }
 
-// Bottom returns a new CounterMap with all counters at their bottom value (all zeros)
+// Bottom returns a new empty CounterMap with
 func (cm *CounterMap) Bottom() Lattice {
 	return &CounterMap{
 		Counters: make(map[string]*GCounter),
@@ -101,19 +98,12 @@ func (cm *CounterMap) Bottom() Lattice {
 	}
 }
 
-// AddKey creates a new counter with the given key and initializes it with value for nodeId
-func (cm *CounterMap) AddKey(key string, nodeId NodeId, value uint64) {
-	if _, exists := cm.Counters[key]; !exists {
-		cm.Counters[key] = NewGCounter(cm.nodeIds)
-	}
-	cm.Counters[key].Increment(nodeId, value)
-}
-
 // IncrementKey increments the counter for the given key by value for nodeId
 func (cm *CounterMap) IncrementKey(key string, nodeId NodeId, value uint64) {
-	if counter, exists := cm.Counters[key]; exists {
-		counter.Increment(nodeId, value)
-	}
+	if _, exists := cm.Counters[key]; !exists {
+		cm.Counters[key] = NewGCounter(cm.nodeIds)
+	} 
+	cm.Counters[key].Increment(nodeId, value)
 }
 
 // ValueForKey returns the total value of the counter for the given key
