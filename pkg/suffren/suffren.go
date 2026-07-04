@@ -157,11 +157,14 @@ func (s *Suffren) sync() bool {
 	s.pending = append(s.pending, op)
 	
 	s.la.Proposer.Propose(proposed)
+	s.mu.Unlock()
+
 	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
 	if ok {
+		s.mu.Lock()
 		s.localCounters = value
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 	
 	return ok
 }
