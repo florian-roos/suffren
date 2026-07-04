@@ -13,7 +13,7 @@ import (
 	"github.com/florian-roos/suffren/pkg/config"
 )
 
-// pendingOp tracks the in-flight operation (Increment or Value) so that
+// pendingOp tracks an in-flight operation (IncrementKey or ValueForKey) so that
 // the learn callback can signal exactly the caller that initiated it.
 type pendingOp struct {
 	proposedValue crdt.Lattice
@@ -21,13 +21,13 @@ type pendingOp struct {
 }
 
 type Suffren struct {
-	opMu         sync.Mutex // serialises Increment()/Value() — at most one in flight
-	mu           sync.Mutex // protects localCounters and pending
-	node         *node.Node
+	mu            sync.Mutex // protects localCounters and pending
+	node          *node.Node
 	localCounters *crdt.CounterMap
-	pending      []*pendingOp 
-	la           *latticeagreement.LatticeAgreement
-	cfg          *config.Config
+	opID          uint64 // ID associated to an operation in the pending map
+	pending       map[uint64]*pendingOp
+	la            *latticeagreement.LatticeAgreement
+	cfg           *config.Config
 }
 
 func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, config *config.Config) *Suffren {
@@ -38,16 +38,17 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 
 	suffren := &Suffren{
 		localCounters: crdt.NewCounterMap(nodeIds),
-		cfg:          config,
+		opID:          0,
+		cfg:           config,
 	}
 	network := p2p.NewNetwork(port, peers)
 
 	suffren.la = latticeagreement.NewLatticeAgreement(
-		nodeId, 
+		nodeId,
 		peers,
-		network, 
-		suffren.localCounters.Bottom(), 
-		suffren.onLearn(), 
+		network,
+		suffren.localCounters.Bottom(),
+		suffren.onLearn(),
 		&config.LatticeAgreement,
 	)
 
@@ -57,8 +58,10 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 }
 
 func (s *Suffren) Start() error {
-	if 	err := s.node.Start(); err != nil { return err }
-	
+	if err := s.node.Start(); err != nil {
+		return err
+	}
+
 	// Retry sync() until it succeeds (peers may still be reconnecting).
 	deadline := time.Now().Add(s.cfg.Suffren.StartupSyncTimeout)
 	for time.Now().Before(deadline) {
@@ -72,66 +75,53 @@ func (s *Suffren) Start() error {
 	return fmt.Errorf("startup sync failed: unable to sync with cluster within %v", s.cfg.Suffren.StartupSyncTimeout)
 }
 
-// Increment increments the local counter by the given value and proposes the new value to the cluster.
+// IncrementKey proposes the new value to the cluster and modifiy the local value when the new value is accepted.
 // Blocks until a quorum LEARN containing the increment is received or timeout.
 func (s *Suffren) IncrementKey(key string, value uint64) (uint64, bool) {
-	s.opMu.Lock()
-	defer s.opMu.Unlock()
-
-	done := make(chan *crdt.CounterMap, 1)
-
 	s.mu.Lock()
 	proposed := s.localCounters.Copy()
 	proposed.IncrementKey(key, s.node.Id, value)
-	s.pending = append(s.pending, &pendingOp{proposedValue: proposed, done: done})
+
+	opID, done := s.registerPendingLocked(proposed)
+	defer s.unregisterPending(opID)
+
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
 	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
-	s.mu.Lock()
-	// We increment only after learning the value that contains the proposed increment of the key (to avoid the case where the increment is proposed but not included in the learned value, and then we timeout).
-	if ok {
-		s.localCounters.MergeInPlace(learned)
+	if !ok {
+		return 0, false
 	}
-	s.pending = nil
-	s.mu.Unlock()
-
-	if ok {
-		return learned.ValueForKey(key), true
-	}
-	return 0, false
+	defer s.applyLearned(learned)
+	return learned.ValueForKey(key), true
 }
 
 // Value performs a linearisable quorum read: proposes the current state,
 // waits for LEARN, and returns the value that was committed.
 func (s *Suffren) ValueForKey(key string) (uint64, bool) {
-	s.opMu.Lock()
-	defer s.opMu.Unlock()
-
-	done := make(chan *crdt.CounterMap, 1)
-
 	s.mu.Lock()
 	proposed := s.localCounters.Copy()
-	s.pending = append(s.pending, &pendingOp{proposedValue: proposed, done: done})
+
+	opID, done := s.registerPendingLocked(proposed)
+	defer s.unregisterPending(opID)
+
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
-	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
-
-	s.mu.Lock()
-	s.pending = nil
-	s.mu.Unlock()
-
-	if ok {
-		return value.ValueForKey(key), true
+	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+	if !ok {
+		return 0, false
 	}
-	return 0, false
+	defer s.applyLearned(learned)
+	return learned.ValueForKey(key), true
 }
 
 // Stop the node and its network service gracefully.
 func (s *Suffren) Stop() {
 	s.node.Stop()
 }
+
+// Helpers
 
 func (s *Suffren) waitForLearn(done <-chan *crdt.CounterMap, timeout time.Duration) (bool, *crdt.CounterMap) {
 	select {
@@ -142,20 +132,21 @@ func (s *Suffren) waitForLearn(done <-chan *crdt.CounterMap, timeout time.Durati
 	}
 }
 
-
-// sync() synchronizes the node with a quorum by proposing its local value. If it gets a response of a quorum, 
+// sync() synchronizes the node with a quorum by proposing its local value. If it gets a response of a quorum,
 // it returns true and change the localCounters. Else it return false.
 func (s *Suffren) sync() bool {
 	s.mu.Lock()
-	
+
 	done := make(chan *crdt.CounterMap, 1)
 	proposed := s.localCounters.Copy()
 	op := &pendingOp{
 		proposedValue: proposed,
-		done   		 : done, 		
+		done:          done,
 	}
-	s.pending = append(s.pending, op)
-	
+
+	s.pending[s.opID] = op
+	s.opID++
+
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
@@ -165,11 +156,11 @@ func (s *Suffren) sync() bool {
 		s.localCounters = value
 		s.mu.Unlock()
 	}
-	
+
 	return ok
 }
 
-// Suffren merges the received value and validates the end of its operation (Value or Increment) only if the value it  
+// Suffren merges the received value and validates the end of its operation (Value or Increment) only if the value it
 // received contain what the suffren node proposed
 func (s *Suffren) onLearn() func(crdt.Lattice) {
 	return func(learnedValue crdt.Lattice) {
@@ -181,13 +172,40 @@ func (s *Suffren) onLearn() func(crdt.Lattice) {
 
 		// Signal the pending operation only if the learned value contains
 		// what was proposed (linearisable guarantee for that caller).
-		for _, op := range s.pending {
+		for opID, op := range s.pending {
 			if op.proposedValue.IsIn(learnedValue) {
 				select {
 				case op.done <- s.localCounters.Copy():
+					delete(s.pending, opID)
 				default: // already signalled or caller timed out
 				}
 			}
 		}
 	}
+}
+
+// registerPendingLocked adds the operation to the pending map. It returns the opID and the operation termination channel.
+// It needs a mutex on s.
+func (s *Suffren) registerPendingLocked(proposed crdt.Lattice) (uint64, chan *crdt.CounterMap) {
+	done := make(chan *crdt.CounterMap, 1)
+
+	opID := s.opID
+	s.pending[opID] = &pendingOp{proposedValue: proposed, done: done}
+	s.opID++
+
+	return opID, done
+}
+
+// unregisterPending clean the pending map of the operation.
+func (s *Suffren) unregisterPending(opID uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pending, opID)
+}
+
+// applyLearned updates the localCounters with the learned value.
+func (s *Suffren) applyLearned(learned crdt.Lattice) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.localCounters.MergeInPlace(learned)
 }
