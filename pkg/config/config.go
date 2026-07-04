@@ -44,7 +44,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Suffren: SuffrenConfig{
 			RoundTimeout:       2 * time.Second,
-			StartupSyncTimeout: 5 * time.Second,
+			StartupSyncTimeout: 20 * time.Second,
 		},
 		LatticeAgreement: LatticeAgreementConfig{
 			MsgChanSize: 1024,

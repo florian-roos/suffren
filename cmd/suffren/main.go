@@ -42,11 +42,16 @@ func main() {
 				continue
 			}
 			fmt.Println("Node started")
-			fmt.Println("Commands: [i] <value>, [v]alue, [q]uit")
+			fmt.Println("Commands: [i] <key> [value], [v] <key>, [q]uit")
 		case "i":
+			if len(parts) < 2 {
+				fmt.Println("Usage: i <key> [value]")
+				continue
+			}
+			key := parts[1]
 			incValue := uint64(1)
-			if len(parts) > 1 {
-				parsed, err := strconv.ParseUint(parts[1], 10, 64)
+			if len(parts) > 2 {
+				parsed, err := strconv.ParseUint(parts[2], 10, 64)
 				if err == nil {
 					incValue = parsed
 				} else {
@@ -54,16 +59,21 @@ func main() {
 					continue
 				}
 			}
-			value, ok := node.Increment(incValue)
+			value, ok := node.IncrementKey(key, incValue)
 			if ok {
-				fmt.Println("Incremented. Value:", value)
+				fmt.Printf("Incremented key %s. Value: %d\n", key, value)
 			} else {
 				fmt.Println("Failed to increment.")
 			}
 		case "v":
-			value, ok := node.Value()
+			if len(parts) < 2 {
+				fmt.Println("Usage: v <key>")
+				continue
+			}
+			key := parts[1]
+			value, ok := node.ValueForKey(key)
 			if ok {
-				fmt.Println("Value:", value)
+				fmt.Printf("Value for key %s: %d\n", key, value)
 			} else {
 				fmt.Println("Failed to get value.")
 			}
