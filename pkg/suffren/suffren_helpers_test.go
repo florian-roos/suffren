@@ -82,13 +82,13 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suff
 }
 
 // waitForConvergence polls until all nodes report the expected value or times out.
-func waitForConvergence(tb testing.TB, expected uint64, nodes ...*Suffren) {
+func waitForConvergence(tb testing.TB, key string, expected uint64, nodes ...*Suffren) {
 	tb.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		allConverged := true
 		for _, n := range nodes {
-			val, ok := n.Value()
+			val, ok := n.ValueForKey(key)
 			if !ok || val != expected {
 				allConverged = false
 				break
@@ -100,7 +100,7 @@ func waitForConvergence(tb testing.TB, expected uint64, nodes ...*Suffren) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	for i, n := range nodes {
-		val, ok := n.Value()
+		val, ok := n.ValueForKey(key)
 		tb.Errorf("node %d: expected %d, got %d (ok=%v)", i, expected, val, ok)
 	}
 	tb.Fatalf("nodes did not converge to %d within 5s", expected)
