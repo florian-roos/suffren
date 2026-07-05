@@ -44,6 +44,7 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 		opID:          0,
 		pending:       make(map[uint64]*pendingOp),
 		unflushedOps:  0,
+		flushTrigger:  make(chan struct{}, 1),
 		cfg:           config,
 	}
 	network := p2p.NewNetwork(port, peers)
