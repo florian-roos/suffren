@@ -24,7 +24,6 @@ type Suffren struct {
 	mu            sync.Mutex // protects localCounters and pending
 	node          *node.Node
 	localCounters *crdt.CounterMap
-	toBeProposed  *crdt.CounterMap
 	opID          uint64 // ID associated to an operation in the pending map
 	pending       map[uint64]*pendingOp
 	unflushedOps  int
