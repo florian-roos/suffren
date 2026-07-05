@@ -13,7 +13,7 @@ import (
 	"github.com/florian-roos/suffren/pkg/config"
 )
 
-// pendingOp tracks an in-flight operation (IncrementKey or ValueForKey) so that
+// Tracks an in-flight operation (IncrementKey or ValueForKey) so that
 // the learn callback can signal exactly the caller that initiated it.
 type pendingOp struct {
 	proposedValue crdt.Lattice
@@ -24,8 +24,11 @@ type Suffren struct {
 	mu            sync.Mutex // protects localCounters and pending
 	node          *node.Node
 	localCounters *crdt.CounterMap
+	toBeProposed  *crdt.CounterMap
 	opID          uint64 // ID associated to an operation in the pending map
 	pending       map[uint64]*pendingOp
+	unflushedOps  int
+	flushTrigger  chan struct{}
 	la            *latticeagreement.LatticeAgreement
 	cfg           *config.Config
 }
@@ -39,6 +42,8 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 	suffren := &Suffren{
 		localCounters: crdt.NewCounterMap(nodeIds),
 		opID:          0,
+		pending:       make(map[uint64]*pendingOp),
+		unflushedOps:  0,
 		cfg:           config,
 	}
 	network := p2p.NewNetwork(port, peers)
@@ -68,6 +73,7 @@ func (s *Suffren) Start() error {
 		ok := s.sync()
 		if ok {
 			slog.Info("Startup sync complete")
+			go s.flusher()
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -75,24 +81,22 @@ func (s *Suffren) Start() error {
 	return fmt.Errorf("startup sync failed: unable to sync with cluster within %v", s.cfg.Suffren.StartupSyncTimeout)
 }
 
-// IncrementKey proposes the new value to the cluster and modifiy the local value when the new value is accepted.
+// Increments the given key in localCounters and adds the operation to the batch.
 // Blocks until a quorum LEARN containing the increment is received or timeout.
 func (s *Suffren) IncrementKey(key string, value uint64) (uint64, bool) {
 	s.mu.Lock()
-	proposed := s.localCounters.Copy()
-	proposed.IncrementKey(key, s.node.Id, value)
+	s.localCounters.IncrementKey(key, s.node.Id, value)
 
-	opID, done := s.registerPendingLocked(proposed)
+	opID, done := s.registerPendingLocked(s.localCounters)
 	defer s.unregisterPending(opID)
 
-	s.la.Proposer.Propose(proposed)
+	s.addOpToBatchLocked()
 	s.mu.Unlock()
 
 	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
 	if !ok {
 		return 0, false
 	}
-	defer s.applyLearned(learned)
 	return learned.ValueForKey(key), true
 }
 
@@ -100,25 +104,47 @@ func (s *Suffren) IncrementKey(key string, value uint64) (uint64, bool) {
 // waits for LEARN, and returns the value that was committed.
 func (s *Suffren) ValueForKey(key string) (uint64, bool) {
 	s.mu.Lock()
-	proposed := s.localCounters.Copy()
-
-	opID, done := s.registerPendingLocked(proposed)
+	opID, done := s.registerPendingLocked(s.localCounters)
 	defer s.unregisterPending(opID)
-
-	s.la.Proposer.Propose(proposed)
+	s.addOpToBatchLocked()
 	s.mu.Unlock()
 
 	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
 	if !ok {
 		return 0, false
 	}
-	defer s.applyLearned(learned)
 	return learned.ValueForKey(key), true
 }
 
-// Stop the node and its network service gracefully.
+// Stops the node and its network service gracefully.
 func (s *Suffren) Stop() {
 	s.node.Stop()
+}
+
+// Runs the flush function when the BatchTimeout timer expired or the MaxBatchSize is over.
+func (s *Suffren) flusher() {
+	ticker := time.NewTicker(s.cfg.Suffren.BatchTimeout)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C: // The BatchTimeout timer expired
+			s.flush()
+		case <-s.flushTrigger: // We reached the the MaxBatchSize
+			s.flush()
+		}
+	}
+}
+
+func (s *Suffren) flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.unflushedOps == 0 {
+		return
+	}
+	s.la.Proposer.Propose(s.localCounters)
+	s.unflushedOps = 0
+
 }
 
 // Helpers
@@ -167,7 +193,6 @@ func (s *Suffren) onLearn() func(crdt.Lattice) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		// Always merge: monotonic join keeps the local counter up to date.
 		s.localCounters.MergeInPlace(learnedValue)
 
 		// Signal the pending operation only if the learned value contains
@@ -184,7 +209,7 @@ func (s *Suffren) onLearn() func(crdt.Lattice) {
 	}
 }
 
-// registerPendingLocked adds the operation to the pending map. It returns the opID and the operation termination channel.
+// Adds the operation to the pending map. It returns the opID and the operation termination channel.
 // It needs a mutex on s.
 func (s *Suffren) registerPendingLocked(proposed crdt.Lattice) (uint64, chan *crdt.CounterMap) {
 	done := make(chan *crdt.CounterMap, 1)
@@ -196,16 +221,22 @@ func (s *Suffren) registerPendingLocked(proposed crdt.Lattice) (uint64, chan *cr
 	return opID, done
 }
 
-// unregisterPending clean the pending map of the operation.
+// Cleans the pending map of the operation.
 func (s *Suffren) unregisterPending(opID uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.pending, opID)
 }
 
-// applyLearned updates the localCounters with the learned value.
-func (s *Suffren) applyLearned(learned crdt.Lattice) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.localCounters.MergeInPlace(learned)
+// Increments unflushedOps and tests whether the maxBatchSize is reached.
+// It needs a mutex on s.
+func (s *Suffren) addOpToBatchLocked() {
+	s.unflushedOps++
+	if s.unflushedOps >= s.cfg.Suffren.MaxBatchSize {
+		// We triger the flusher so it flush immediatly
+		select {
+		case s.flushTrigger <- struct{}{}:
+		default:
+		}
+	}
 }
