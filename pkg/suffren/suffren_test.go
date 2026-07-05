@@ -7,103 +7,140 @@ import (
 	"github.com/florian-roos/suffren/internal/crdt"
 )
 
-func TestSuffren_node_initial_value_is_zero(t *testing.T) {
-	// GIVEN: a 3-node cluster (quorum = 2)
-	// THEN:  its initial value is zero (the empty GCounter)
+func TestSuffren_ValueForKey_on_an_unknown_key(t *testing.T) {
+	// GIVEN: a 3-node cluster
+	// WHEN: we query an unknown key
+	// THEN: it returns 0
 	s1, _, _ := startCluster(t, peers3())
 
-	val, ok := s1.Value()
+	val, ok := s1.ValueForKey("unknown_key")
 	if !ok {
-		t.Fatal("Value() timed out on a fresh cluster")
+		t.Fatal("ValueForKey() timed out on a fresh cluster")
 	}
 	if val != 0 {
 		t.Errorf("expected initial value to be 0, got %d", val)
 	}
 }
 
-func TestSuffren_increment_increses_value(t *testing.T) {
+func TestSuffren_increment_one_key_does_not_affect_others(t *testing.T) {
 	// GIVEN: a 3-node cluster
-	// WHEN:  we call Increment(1) n times on one node
-	// THEN:  Value() returns n
+	// WHEN: we increment "test2_key_A" multiple times
+	// THEN: "test2_key_A" has the correct value, and "test2_key_B" remains 0
 	s1, _, _ := startCluster(t, peers3bis())
 
 	increments := 5
 	for i := 0; i < increments; i++ {
-		_, ok := s1.Increment(1)
+		_, ok := s1.IncrementKey("test2_key_A", 1)
 		if !ok {
-			t.Fatalf("Increment() #%d timed out", i+1)
+			t.Fatalf("IncrementKey() #%d timed out", i+1)
 		}
 	}
 
-	val, ok := s1.Value()
-	if !ok {
-		t.Fatal("Value() timed out")
+	valA, okA := s1.ValueForKey("test2_key_A")
+	if !okA {
+		t.Fatal("ValueForKey(test2_key_A) timed out")
 	}
-	if val != uint64(increments) {
-		t.Errorf("expected value to be %d after %d increments, got %d", increments, increments, val)
+	if valA != uint64(increments) {
+		t.Errorf("expected test2_key_A to be %d, got %d", increments, valA)
+	}
+
+	valB, okB := s1.ValueForKey("test2_key_B")
+	if !okB {
+		t.Fatal("ValueForKey(test2_key_B) timed out")
+	}
+	if valB != 0 {
+		t.Errorf("expected test2_key_B to be 0, got %d", valB)
 	}
 }
 
-func TestSuffren_concurrent_increments_converge_to_the_same_value(t *testing.T) {
-	// GIVEN: 3 nodes that run in parallel
-	// WHEN: The nodes Increment() concurrently with goroutines
-	// THEN: The nodes converge toward the same value
-	// This ensures that no value is lost even with contention
-
+func TestSuffren_concurrent_increments_on_multiple_keys(t *testing.T) {
+	// GIVEN: a 3-node cluster
+	// WHEN: the nodes increment multiple different keys concurrently
+	// THEN: all nodes converge to the correct values for all keys
 	peers := peers3bis()
+	s1, s2, s3 := startCluster(t, peers)
+
+	wg := sync.WaitGroup{}
+
+	// We'll increment test3_key_A 100 times, test3_key_B 100 times, test3_key_C 100 times
+	for i := 0; i < 100; i++ {
+		wg.Add(3)
+		go func() { defer wg.Done(); s1.IncrementKey("test3_key_A", 1) }()
+		go func() { defer wg.Done(); s2.IncrementKey("test3_key_B", 1) }()
+		go func() { defer wg.Done(); s3.IncrementKey("test3_key_C", 1) }()
+	}
+
+	wg.Wait()
+
+	waitForConvergence(t, "test3_key_A", 100, s1, s2, s3)
+	waitForConvergence(t, "test3_key_B", 100, s1, s2, s3)
+	waitForConvergence(t, "test3_key_C", 100, s1, s2, s3)
+}
+
+func TestSuffren_concurrent_increments_on_same_key(t *testing.T) {
+	// GIVEN: a 3-node cluster
+	// WHEN: the nodes increment the SAME key concurrently
+	// THEN: the cluster converges without dropping any increments
+	peers := peers3()
 	s1, s2, s3 := startCluster(t, peers)
 
 	wg := sync.WaitGroup{}
 
 	for i := 0; i < 100; i++ {
 		wg.Add(3)
-		go func() { defer wg.Done(); s1.Increment(1) }()
-		go func() { defer wg.Done(); s2.Increment(1) }()
-		go func() { defer wg.Done(); s3.Increment(1) }()
+		go func() { defer wg.Done(); s1.IncrementKey("shared_key", 1) }()
+		go func() { defer wg.Done(); s2.IncrementKey("shared_key", 1) }()
+		go func() { defer wg.Done(); s3.IncrementKey("shared_key", 1) }()
 	}
 
 	wg.Wait()
 
-	waitForConvergence(t, 300, s1, s2, s3)
+	waitForConvergence(t, "shared_key", 300, s1, s2, s3)
 }
 
-func TestSuffren_late_joining_node_catches_up(t *testing.T) {
+func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	// GIVEN: 2 nodes that run in parallel, and a 3rd node that starts later
-	// WHEN:  the first 2 nodes Increment() a few times before the 3rd node starts
-	// THEN:  all nodes eventually converge to the same value, including the late-joining node
-
+	// WHEN: the first 2 nodes increment various keys
+	// THEN: the 3rd node fetches all keys and converges perfectly
 	peers := peers3()
-
 	cfg := configForTest()
 
-	// Start only N1 and N2 initially — extract their ports from the peers map.
+	// Start N1 and N2 concurrently so they can form a quorum (2 out of 3)
 	s1 := NewSuffren(crdt.NodeId("N1"), peers["N1"][len("localhost:"):], peers, cfg)
-	if err := s1.Start(); err != nil {
-		t.Fatalf("failed to start node 1: %v", err)
-	}
-	defer s1.Stop()
-
 	s2 := NewSuffren(crdt.NodeId("N2"), peers["N2"][len("localhost:"):], peers, cfg)
-	if err := s2.Start(); err != nil {
-		t.Fatalf("failed to start node 2: %v", err)
-	}
+
+	var wgStart sync.WaitGroup
+	wgStart.Add(2)
+	go func() {
+		defer wgStart.Done()
+		if err := s1.Start(); err != nil {
+			t.Errorf("node 1 failed: %v", err)
+		}
+	}()
+	go func() {
+		defer wgStart.Done()
+		if err := s2.Start(); err != nil {
+			t.Errorf("node 2 failed: %v", err)
+		}
+	}()
+	wgStart.Wait()
+
+	defer s1.Stop()
 	defer s2.Stop()
 
-	// Increment a few times before the 3rd node starts
+	// N1 and N2 increment different keys
 	for i := 0; i < 10; i++ {
-		s1.Increment(1)
-		s2.Increment(1)
+		s1.IncrementKey("key_1", 1)
+		s2.IncrementKey("key_2", 1)
 	}
 
+	// Now start N3
 	s3 := NewSuffren(crdt.NodeId("N3"), peers["N3"][len("localhost:"):], peers, cfg)
 	if err := s3.Start(); err != nil {
 		t.Fatalf("failed to start node 3: %v", err)
 	}
 	defer s3.Stop()
 
-	waitForConvergence(t, 20, s1, s2, s3)
+	waitForConvergence(t, "key_1", 10, s1, s2, s3)
+	waitForConvergence(t, "key_2", 10, s1, s2, s3)
 }
-
-
-
-

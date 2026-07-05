@@ -16,9 +16,10 @@ type SuffrenConfig struct {
 	// it is considered dead and a new round is started.
 	// Must be > ProposalInterval.
 	// Default: 2s
-	RoundTimeout time.Duration
-	// StartupSyncTimeout is the maximum time to retry Value() on startup
-	StartupSyncTimeout time.Duration
+	RoundTimeout       time.Duration
+	StartupSyncTimeout time.Duration // StartupSyncTimeout is the maximum time to retry Value() on startup
+	BatchTimeout       time.Duration // BatchTimeout is the time we wait before a batch is proposed to the network
+	MaxBatchSize       int
 }
 
 type LatticeAgreementConfig struct {
@@ -44,7 +45,9 @@ func DefaultConfig() *Config {
 	return &Config{
 		Suffren: SuffrenConfig{
 			RoundTimeout:       2 * time.Second,
-			StartupSyncTimeout: 5 * time.Second,
+			StartupSyncTimeout: 20 * time.Second,
+			BatchTimeout:       10 * time.Millisecond,
+			MaxBatchSize:       100,
 		},
 		LatticeAgreement: LatticeAgreementConfig{
 			MsgChanSize: 1024,
