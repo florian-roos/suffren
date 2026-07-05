@@ -2,6 +2,7 @@ package ratelimiter
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/florian-roos/suffren/pkg/suffren"
@@ -82,12 +83,16 @@ func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource strin
 
 	prevCount, ok := l.suffren.ValueForKey(previousKey)
 	if !ok {
-		return 0, fmt.Errorf("timeout reading previous window from cluster")
+		err := fmt.Errorf("timeout reading previous window from cluster")
+		slog.Error("Rate limiter cluster timeout", "key", previousKey, "error", err)
+		return 0, err
 	}
 
 	currentCount, ok := l.suffren.IncrementKey(currentKey, value)
 	if !ok {
-		return 0, fmt.Errorf("timeout incrementing current window in cluster")
+		err := fmt.Errorf("timeout incrementing current window in cluster")
+		slog.Error("Rate limiter cluster timeout", "key", currentKey, "error", err)
+		return 0, err
 	}
 
 	// Calculate the Sliding Window estimate
