@@ -32,11 +32,13 @@ type Suffren struct {
 	cfg           *config.Config
 }
 
-func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, config *config.Config) *Suffren {
+func NewSuffren(nodeId crdt.NodeId, peers map[crdt.NodeId]string, config *config.Config) *Suffren {
 	var nodeIds []crdt.NodeId
 	for nodeId := range peers {
 		nodeIds = append(nodeIds, nodeId)
 	}
+
+	address := peers[nodeId]
 
 	suffren := &Suffren{
 		localCounters: crdt.NewCounterMap(nodeIds),
@@ -46,7 +48,7 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 		flushTrigger:  make(chan struct{}, 1),
 		cfg:           config,
 	}
-	network := p2p.NewNetwork(port, peers)
+	network := p2p.NewNetwork(address, peers)
 
 	suffren.la = latticeagreement.NewLatticeAgreement(
 		nodeId,
@@ -57,7 +59,7 @@ func NewSuffren(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, c
 		&config.LatticeAgreement,
 	)
 
-	suffren.node = node.NewNode(nodeId, port, peers, network, suffren.la, config)
+	suffren.node = node.NewNode(nodeId, address, peers, network, suffren.la, config)
 
 	return suffren
 }
