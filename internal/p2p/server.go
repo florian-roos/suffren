@@ -14,7 +14,7 @@ import (
 const MsgChanSize = 100
 
 type Server struct {
-	port              string
+	address           string
 	listener          net.Listener
 	done              chan struct{}
 	wg                sync.WaitGroup
@@ -22,9 +22,9 @@ type Server struct {
 	mu                sync.Mutex
 }
 
-func NewServer(port string) *Server {
+func NewServer(address string) *Server {
 	s := &Server{
-		port:              port,
+		address:           address,
 		done:              make(chan struct{}),
 		wg:                sync.WaitGroup{},
 		activeConnections: make(map[*Connection]struct{}),
@@ -35,14 +35,14 @@ func NewServer(port string) *Server {
 
 func (s *Server) Listen() (<-chan protocol.Message, error) {
 	var err error
-	s.listener, err = net.Listen("tcp", ":"+s.port)
+	s.listener, err = net.Listen("tcp", s.address)
 
 	if err != nil {
 		slog.Error("Failed to start server", "error", err)
 		return nil, err
 	}
 
-	slog.Info("Listening", "port", s.port)
+	slog.Info("Listening", "address", s.address)
 	msgChanel := make(chan protocol.Message, MsgChanSize)
 	s.wg.Add(1)
 	go func() {
@@ -51,7 +51,7 @@ func (s *Server) Listen() (<-chan protocol.Message, error) {
 			conn, err := s.listener.Accept()
 			if err != nil {
 				if isClosingNetwork(err) {
-					slog.Info("Shutting down server", "port", s.port)
+					slog.Info("Shutting down server", "address", s.address)
 					return
 				}
 				slog.Error("Failed to accept connection", "error", err)

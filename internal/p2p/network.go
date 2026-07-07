@@ -9,18 +9,18 @@ import (
 )
 
 type Network struct {
-	port   string
-	server *Server
-	client *Client
-	peers  map[crdt.NodeId]string
+	address string
+	server  *Server
+	client  *Client
+	peers   map[crdt.NodeId]string
 }
 
-func NewNetwork(port string, peers map[crdt.NodeId]string) *Network {
+func NewNetwork(address string, peers map[crdt.NodeId]string) *Network {
 	return &Network{
-		port:   port,
-		server: NewServer(port),
-		client: NewClient(),
-		peers:  peers,
+		address: address,
+		server:  NewServer(address),
+		client:  NewClient(),
+		peers:   peers,
 	}
 }
 
