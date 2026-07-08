@@ -47,17 +47,14 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suff
 	tb.Helper()
 	cfg := configForTest()
 
-	var ports []string
 	var ids []crdt.NodeId
-	for id, addr := range peers {
+	for id := range peers {
 		ids = append(ids, id)
-		// extract port from "localhost:PORT"
-		ports = append(ports, addr[len("localhost:"):])
 	}
 
-	s1 = NewSuffren(ids[0], ports[0], peers, cfg)
-	s2 = NewSuffren(ids[1], ports[1], peers, cfg)
-	s3 = NewSuffren(ids[2], ports[2], peers, cfg)
+	s1 = NewSuffren(ids[0], peers, cfg)
+	s2 = NewSuffren(ids[1], peers, cfg)
+	s3 = NewSuffren(ids[2], peers, cfg)
 
 	var wg sync.WaitGroup
 	for _, s := range []*Suffren{s1, s2, s3} {
