@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -50,6 +51,7 @@ func NewServer(limiter *ratelimiter.Limiter) *Server {
 
 // starts the API HTTP server.
 func (s *Server) Start(address string) error {
+	slog.Info("API server started", "address", address)
 	return http.ListenAndServe(address, s.router)
 }
 

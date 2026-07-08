@@ -33,7 +33,12 @@ func main() {
 
 	if *runAPI {
 		// Run the production API server
-		err := apiServer.Start(":" + *apiPort)
+		err := node.Start()
+		if err != nil {
+			slog.Error("Failed to start suffren node", "error", err)
+		}
+
+		err = apiServer.Start("localhost:" + *apiPort)
 		if err != nil {
 			slog.Error("Failed to start API server", "error", err)
 		}
@@ -53,13 +58,12 @@ func parseStringToPeersMap(s string) map[crdt.NodeId]string {
 
 	peersSlice := strings.Split(s, ",")
 	for _, pair := range peersSlice {
-		parts := strings.Split(pair, ":")
+		parts := strings.SplitN(pair, ":", 2)
 		if len(parts) == 2 {
 			nodeId := parts[0]
 			address := parts[1]
 			peers[crdt.NodeId(nodeId)] = address
 		}
 	}
-
 	return peers
 }

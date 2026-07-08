@@ -2,7 +2,6 @@ package ratelimiter
 
 import (
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/florian-roos/suffren/pkg/suffren"
@@ -46,12 +45,12 @@ func (l *Limiter) buildKey(identifier string, resource string, rule Rule, window
 // Evaluates whether the request is allowed (sliding window counter).
 // It executes in a single atomic-like operation.
 func (l *Limiter) Check(identifier string, resource string, value uint64, rule Rule) Decision {
-	consumed, err := l.incrementAndGetTotalCountInSlidingWindow(identifier, resource, value, rule)
+	consumed, ok := l.incrementAndGetTotalCountInSlidingWindow(identifier, resource, value, rule)
 
-	if err != nil {
+	if !ok {
 		return Decision{
 			Allowed: false,
-			Error:   err,
+			Error:   fmt.Errorf("Failed to check key: %s, resource: %s", identifier, resource),
 		}
 	}
 
@@ -72,11 +71,11 @@ func (l *Limiter) Check(identifier string, resource string, value uint64, rule R
 }
 
 func (l *Limiter) Status(identifier string, resource string, rule Rule) Decision {
-	consumed, err := l.getTotalCountInSlidingWindow(identifier, resource, rule)
+	consumed, ok := l.getTotalCountInSlidingWindow(identifier, resource, rule)
 
-	if err != nil {
+	if !ok {
 		return Decision{
-			Error: err,
+			Error: fmt.Errorf("Failed to get status for key: %s, resource: %s", identifier, resource),
 		}
 	}
 
@@ -92,7 +91,7 @@ func (l *Limiter) Status(identifier string, resource string, rule Rule) Decision
 }
 
 // increments of the given value and gets the quantity consummed during the sliding window
-func (l *Limiter) incrementAndGetTotalCountInSlidingWindow(identifier string, resource string, value uint64, rule Rule) (uint64, error) {
+func (l *Limiter) incrementAndGetTotalCountInSlidingWindow(identifier string, resource string, value uint64, rule Rule) (uint64, bool) {
 	now := l.clock()
 
 	currentWindowStart := now.Truncate(rule.Window)
@@ -103,16 +102,12 @@ func (l *Limiter) incrementAndGetTotalCountInSlidingWindow(identifier string, re
 
 	prevCount, ok := l.suffren.ValueForKey(previousKey)
 	if !ok {
-		err := fmt.Errorf("timeout reading previous window from cluster")
-		slog.Error("Rate limiter cluster timeout", "key", previousKey, "error", err)
-		return 0, err
+		return 0, false
 	}
 
 	currentCount, ok := l.suffren.IncrementKey(currentKey, value)
 	if !ok {
-		err := fmt.Errorf("timeout incrementing current window in cluster")
-		slog.Error("Rate limiter cluster timeout", "key", currentKey, "error", err)
-		return 0, err
+		return 0, false
 	}
 
 	// Calculate the Sliding Window estimate
@@ -123,10 +118,11 @@ func (l *Limiter) incrementAndGetTotalCountInSlidingWindow(identifier string, re
 	estimatedTotal := float64(prevCount)*weightOfPreviousWindow + float64(currentCount)
 	total := uint64(estimatedTotal)
 
-	return total, nil
+	return total, true
 }
 
-func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource string, rule Rule) (uint64, error) {
+// get the value consummed during the sliding window of the given identifier/resource/rule
+func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource string, rule Rule) (uint64, bool) {
 	now := l.clock()
 
 	currentWindowStart := now.Truncate(rule.Window)
@@ -137,16 +133,12 @@ func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource strin
 
 	prevCount, ok := l.suffren.ValueForKey(previousKey)
 	if !ok {
-		err := fmt.Errorf("timeout reading previous window from cluster")
-		slog.Error("Rate limiter cluster timeout", "key", previousKey, "error", err)
-		return 0, err
+		return 0, false
 	}
 
 	currentCount, ok := l.suffren.ValueForKey(currentKey)
 	if !ok {
-		err := fmt.Errorf("timeout reading current window in cluster")
-		slog.Error("Rate limiter cluster timeout", "key", currentKey, "error", err)
-		return 0, err
+		return 0, false
 	}
 
 	// Calculate the Sliding Window estimate
@@ -157,5 +149,5 @@ func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource strin
 	estimatedTotal := float64(prevCount)*weightOfPreviousWindow + float64(currentCount)
 	total := uint64(estimatedTotal)
 
-	return total, nil
+	return total, true
 }
