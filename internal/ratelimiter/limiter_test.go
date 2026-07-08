@@ -33,9 +33,9 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *suff
 		ports = append(ports, addr[len("localhost:"):])
 	}
 
-	s1 = suffren.NewSuffren(ids[0], ports[0], peers, cfg)
-	s2 = suffren.NewSuffren(ids[1], ports[1], peers, cfg)
-	s3 = suffren.NewSuffren(ids[2], ports[2], peers, cfg)
+	s1 = suffren.NewSuffren(ids[0], peers, cfg)
+	s2 = suffren.NewSuffren(ids[1], peers, cfg)
+	s3 = suffren.NewSuffren(ids[2], peers, cfg)
 
 	var wg sync.WaitGroup
 	for _, s := range []*suffren.Suffren{s1, s2, s3} {
@@ -172,5 +172,71 @@ func TestLimiter_different_identifiers_and_resources_are_independent(t *testing.
 	dec3 := limiter.Check("user2", "api", 8, rule)
 	if dec3.Current != 8 {
 		t.Errorf("expected user2 api to be 8, got %d", dec3.Current)
+	}
+}
+
+func TestLimiter_Status_returns_current_count_without_incrementing(t *testing.T) {
+	// GIVEN: a 3-node cluster and a rule allowing 10 requests per minute
+	// WHEN: we make 3 requests, then call Status
+	// THEN: Status returns 3 without incrementing the counter
+	s1, _, _ := startCluster(t, peers3())
+	limiter := NewLimiter(s1)
+
+	rule := Rule{Limit: 10, Window: 1 * time.Minute}
+
+	// Make 3 requests
+	limiter.Check("user_status", "api", 3, rule)
+
+	// Call Status
+	status := limiter.Status("user_status", "api", rule)
+
+	if status.Error != nil {
+		t.Fatalf("expected no error, got %v", status.Error)
+	}
+	if status.Current != 3 {
+		t.Errorf("expected status to return 3, got %d", status.Current)
+	}
+	if status.Remaining != 7 {
+		t.Errorf("expected remaining to be 7, got %d", status.Remaining)
+	}
+
+	// Verify it didn't increment
+	status2 := limiter.Status("user_status", "api", rule)
+	if status2.Current != 3 {
+		t.Errorf("expected status to remain 3, got %d", status2.Current)
+	}
+}
+
+func TestLimiter_Status_applies_sliding_window_weight(t *testing.T) {
+	// GIVEN: a 3-node cluster and a sliding window rule
+	// WHEN: we consume requests in the previous window and check Status in the current window
+	// THEN: Status applies the overlap weight formula correctly without incrementing
+	s1, _, _ := startCluster(t, peers3())
+	limiter := NewLimiter(s1)
+
+	baseTime := time.Date(2026, 7, 5, 14, 0, 0, 0, time.UTC)
+	rule := Rule{Limit: 100, Window: 1 * time.Minute}
+
+	// Simulate the previous minute (14:00:xx). Consume 60 requests.
+	limiter.clock = func() time.Time {
+		return baseTime.Add(30 * time.Second) // 14:00:30
+	}
+	limiter.Check("user_sliding_status", "api", 60, rule)
+
+	// Now we are in the CURRENT minute (14:01:xx). 15 seconds into the new minute.
+	// Overlap weight: 1 - (15/60) = 0.75
+	// Estimated carry-over: 60 * 0.75 = 45.
+	limiter.clock = func() time.Time {
+		return baseTime.Add(1 * time.Minute).Add(15 * time.Second) // 14:01:15
+	}
+
+	// Call Status
+	status := limiter.Status("user_sliding_status", "api", rule)
+
+	if status.Error != nil {
+		t.Fatalf("expected no error, got %v", status.Error)
+	}
+	if status.Current != 45 {
+		t.Errorf("expected sliding status to be 45, got %d", status.Current)
 	}
 }
