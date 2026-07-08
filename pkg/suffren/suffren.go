@@ -154,6 +154,7 @@ func (s *Suffren) flush() {
 func (s *Suffren) waitForLearn(done <-chan *crdt.CounterMap, timeout time.Duration) (bool, *crdt.CounterMap) {
 	select {
 	case <-time.After(timeout):
+		slog.Error("Timeout, quorum didn't respond", slog.String("timeout", timeout.String()))
 		return false, nil
 	case value := <-done:
 		return true, value
