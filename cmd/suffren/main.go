@@ -33,7 +33,10 @@ func main() {
 
 	if *runAPI {
 		// Run the production API server
-		apiServer.Start(":" + *apiPort)
+		err := apiServer.Start(":" + *apiPort)
+		if err != nil {
+			slog.Error("Failed to start API server", "error", err)
+		}
 	} else {
 		// Run the CLI to test suffren on a few nodes
 		startInteractiveCLI(node)
