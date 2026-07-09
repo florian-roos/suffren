@@ -37,6 +37,11 @@ type Server struct {
 	limiter *ratelimiter.Limiter
 }
 
+// RouterForTest returns the HTTP router for testing purposes.
+func (s *Server) RouterForTest() http.Handler {
+	return s.router
+}
+
 func NewServer(limiter *ratelimiter.Limiter) *Server {
 	s := &Server{
 		router:  http.NewServeMux(),
