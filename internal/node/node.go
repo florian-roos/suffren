@@ -2,11 +2,12 @@ package node
 
 import (
 	"log/slog"
-	"github.com/florian-roos/suffren/internal/crdt"
-	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
-	"github.com/florian-roos/suffren/internal/protocol"
-	"github.com/florian-roos/suffren/pkg/config"
 	"sync"
+
+	"github.com/florian-roos/suffren/internal/crdt"
+	latticeagreement "github.com/florian-roos/suffren/internal/latticeagreement"
+	"github.com/florian-roos/suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/config"
 )
 
 type NetworkService interface {
@@ -17,7 +18,7 @@ type NetworkService interface {
 
 type Node struct {
 	Id       crdt.NodeId
-	Port     string
+	address  string
 	Network  NetworkService
 	peers    map[crdt.NodeId]string
 	la       *latticeagreement.LatticeAgreement
@@ -27,10 +28,10 @@ type Node struct {
 	wg       sync.WaitGroup
 }
 
-func NewNode(nodeId crdt.NodeId, port string, peers map[crdt.NodeId]string, network NetworkService, la *latticeagreement.LatticeAgreement, cfg *config.Config) *Node {
+func NewNode(nodeId crdt.NodeId, address string, peers map[crdt.NodeId]string, network NetworkService, la *latticeagreement.LatticeAgreement, cfg *config.Config) *Node {
 	n := Node{
 		Id:      nodeId,
-		Port:    port,
+		address: address,
 		Network: network,
 		peers:   peers,
 		la:      la,

@@ -1,4 +1,4 @@
-package suffren
+package engine
 
 import (
 	"io"
@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/florian-roos/suffren/internal/config"
 	"github.com/florian-roos/suffren/internal/crdt"
-	"github.com/florian-roos/suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/testutils"
 )
 
 func init() {
@@ -24,45 +25,34 @@ func configForTest() *config.Config {
 	return cfg
 }
 
-// Returns a map of 3 nodes with their associated localhost (8001, 8002 and 8003)
+// Returns a map of 3 nodes with their associated localhost (dynamic ports)
 func peers3() map[crdt.NodeId]string {
-	return map[crdt.NodeId]string{
-		"N1": "localhost:8001",
-		"N2": "localhost:8002",
-		"N3": "localhost:8003",
-	}
+	return testutils.GeneratePeers3()
 }
 
-// Returns a map of 3 nodes different from peers3() with their associated localhost (8001, 8002 and 8003)
+// Returns a map of 3 nodes different from peers3() with their associated localhost (dynamic ports)
 func peers3bis() map[crdt.NodeId]string {
-	return map[crdt.NodeId]string{
-		"N1": "localhost:8011",
-		"N2": "localhost:8012",
-		"N3": "localhost:8013",
-	}
+	return peers3() // Now it's dynamic so we can just reuse peers3()!
 }
 
 // startCluster creates and starts all 3 nodes. Returns them and a cleanup func.
-func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suffren) {
+func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Engine) {
 	tb.Helper()
 	cfg := configForTest()
 
-	var ports []string
 	var ids []crdt.NodeId
-	for id, addr := range peers {
+	for id := range peers {
 		ids = append(ids, id)
-		// extract port from "localhost:PORT"
-		ports = append(ports, addr[len("localhost:"):])
 	}
 
-	s1 = NewSuffren(ids[0], ports[0], peers, cfg)
-	s2 = NewSuffren(ids[1], ports[1], peers, cfg)
-	s3 = NewSuffren(ids[2], ports[2], peers, cfg)
+	s1 = New(ids[0], peers, cfg)
+	s2 = New(ids[1], peers, cfg)
+	s3 = New(ids[2], peers, cfg)
 
 	var wg sync.WaitGroup
-	for _, s := range []*Suffren{s1, s2, s3} {
+	for _, s := range []*Engine{s1, s2, s3} {
 		wg.Add(1)
-		go func(node *Suffren) {
+		go func(node *Engine) {
 			defer wg.Done()
 			err := node.Start()
 			if err != nil {
@@ -82,7 +72,7 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suff
 }
 
 // waitForConvergence polls until all nodes report the expected value or times out.
-func waitForConvergence(tb testing.TB, key string, expected uint64, nodes ...*Suffren) {
+func waitForConvergence(tb testing.TB, key string, expected uint64, nodes ...*Engine) {
 	tb.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

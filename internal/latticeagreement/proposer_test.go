@@ -5,6 +5,7 @@ import (
 
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/protocol"
+	"github.com/florian-roos/suffren/internal/testutils"
 )
 
 // Helpers
@@ -30,11 +31,7 @@ func nack(value *crdt.GCounter) protocol.Message {
 }
 
 func peers3() map[crdt.NodeId]string {
-	return map[crdt.NodeId]string{
-		"N1": "localhost:8001",
-		"N2": "localhost:8002",
-		"N3": "localhost:8003",
-	}
+	return testutils.GeneratePeers3()
 }
 
 // Tests

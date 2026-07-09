@@ -1,85 +1,69 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
+	"flag"
+	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 
+	"github.com/florian-roos/suffren/internal/api"
 	"github.com/florian-roos/suffren/internal/crdt"
-	"github.com/florian-roos/suffren/pkg/config"
-	"github.com/florian-roos/suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/limiter"
+	"github.com/florian-roos/suffren/internal/config"
+	"github.com/florian-roos/suffren/internal/engine"
+	"github.com/joho/godotenv"
 )
 
-// CLI entry point for the Suffren application.
 func main() {
-	peers := map[crdt.NodeId]string{
-		"8001": "localhost:8001",
-		"8002": "localhost:8002",
-		"8003": "localhost:8003",
+	runAPI := flag.Bool("api", false, "Start the API HTTP server of Suffren Watchguard")
+	nodeId := flag.String("id", "N1", "Unique identifier of the node in the cluster (ex: N1)")
+	apiPort := flag.String("api-port", "8080", "Listening port for the HTTP API (ex: 8081)")
+	flag.Parse()
+
+	err := godotenv.Load()
+	if err != nil {
+		slog.Error("No .env file found", "error", err)
 	}
 
-	port := os.Args[1]
-	node := suffren.NewSuffren(crdt.NodeId(port), port, peers, config.DefaultConfig())
+	peers := parseStringToPeersMap(os.Getenv("PEERS"))
 
-	fmt.Printf("Node %s initialized. Press [s] to start\n", port)
+	node := engine.New(crdt.NodeId(*nodeId), peers, config.DefaultConfig())
+	limiter := limiter.NewLimiter(node)
+	apiServer := api.NewServer(limiter)
 
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		text := scanner.Text()
-		if text == "" {
-			continue
+	if *runAPI {
+		// Run the production API server
+		err := node.Start()
+		if err != nil {
+			slog.Error("Failed to start suffren node", "error", err)
 		}
 
-		parts := strings.Fields(text)
-		switch parts[0] {
-		case "s":
-			fmt.Printf("Node starting...\n")
-			err := node.Start()
-			if err != nil {
-				fmt.Printf("Failed to start: %v\n", err)
-				continue
-			}
-			fmt.Println("Node started")
-			fmt.Println("Commands: [i] <key> [value], [v] <key>, [q]uit")
-		case "i":
-			if len(parts) < 2 {
-				fmt.Println("Usage: i <key> [value]")
-				continue
-			}
-			key := parts[1]
-			incValue := uint64(1)
-			if len(parts) > 2 {
-				parsed, err := strconv.ParseUint(parts[2], 10, 64)
-				if err == nil {
-					incValue = parsed
-				} else {
-					fmt.Printf("Invalid increment value: %v\n", err)
-					continue
-				}
-			}
-			value, ok := node.IncrementKey(key, incValue)
-			if ok {
-				fmt.Printf("Incremented key %s. Value: %d\n", key, value)
-			} else {
-				fmt.Println("Failed to increment.")
-			}
-		case "v":
-			if len(parts) < 2 {
-				fmt.Println("Usage: v <key>")
-				continue
-			}
-			key := parts[1]
-			value, ok := node.ValueForKey(key)
-			if ok {
-				fmt.Printf("Value for key %s: %d\n", key, value)
-			} else {
-				fmt.Println("Failed to get value.")
-			}
-		case "q":
-			node.Stop()
-			return
+		err = apiServer.Start("localhost:" + *apiPort)
+		if err != nil {
+			slog.Error("Failed to start API server", "error", err)
+		}
+	} else {
+		// Run the CLI to test suffren on a few nodes
+		startInteractiveCLI(node)
+	}
+}
+
+// returns the peers map from the string in the .env file (format : "N1:localhost:8031,N2:localhost:8032")
+func parseStringToPeersMap(s string) map[crdt.NodeId]string {
+	if s == "" {
+		slog.Error("PEERS is not defined in .env")
+	}
+
+	peers := make(map[crdt.NodeId]string)
+
+	peersSlice := strings.Split(s, ",")
+	for _, pair := range peersSlice {
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) == 2 {
+			nodeId := parts[0]
+			address := parts[1]
+			peers[crdt.NodeId(nodeId)] = address
 		}
 	}
+	return peers
 }

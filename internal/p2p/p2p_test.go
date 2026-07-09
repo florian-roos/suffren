@@ -27,15 +27,15 @@ func getFreePort() string {
 }
 
 func TestSendReceiveReply(t *testing.T) {
-	port1 := getFreePort()
-	port2 := getFreePort()
-	network1 := NewNetwork(port1, map[crdt.NodeId]string{
-		crdt.NodeId("node1"): "localhost:" + port1,
-		crdt.NodeId("node2"): "localhost:" + port2,
+	addr1 := "localhost:" + getFreePort()
+	addr2 := "localhost:" + getFreePort()
+	network1 := NewNetwork(addr1, map[crdt.NodeId]string{
+		crdt.NodeId("node1"): addr1,
+		crdt.NodeId("node2"): addr2,
 	})
-	network2 := NewNetwork(port2, map[crdt.NodeId]string{
-		crdt.NodeId("node1"): "localhost:" + port1,
-		crdt.NodeId("node2"): "localhost:" + port2,
+	network2 := NewNetwork(addr2, map[crdt.NodeId]string{
+		crdt.NodeId("node1"): addr1,
+		crdt.NodeId("node2"): addr2,
 	})
 
 	msgChan1, err := network1.Listen()

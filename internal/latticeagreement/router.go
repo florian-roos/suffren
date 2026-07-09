@@ -3,7 +3,7 @@ package latticeagreement
 import (
 	"log/slog"
 	"github.com/florian-roos/suffren/internal/protocol"
-	"github.com/florian-roos/suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/config"
 	"sync"
 )
 

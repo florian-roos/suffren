@@ -1,4 +1,4 @@
-package suffren
+package engine
 
 import (
 	"sync"
@@ -106,8 +106,8 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	cfg := configForTest()
 
 	// Start N1 and N2 concurrently so they can form a quorum (2 out of 3)
-	s1 := NewSuffren(crdt.NodeId("N1"), peers["N1"][len("localhost:"):], peers, cfg)
-	s2 := NewSuffren(crdt.NodeId("N2"), peers["N2"][len("localhost:"):], peers, cfg)
+	s1 := New(crdt.NodeId("N1"), peers, cfg)
+	s2 := New(crdt.NodeId("N2"), peers, cfg)
 
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
@@ -135,7 +135,7 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	}
 
 	// Now start N3
-	s3 := NewSuffren(crdt.NodeId("N3"), peers["N3"][len("localhost:"):], peers, cfg)
+	s3 := New(crdt.NodeId("N3"), peers, cfg)
 	if err := s3.Start(); err != nil {
 		t.Fatalf("failed to start node 3: %v", err)
 	}
