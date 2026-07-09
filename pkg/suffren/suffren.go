@@ -118,6 +118,12 @@ func (s *Suffren) ValueForKey(key string) (uint64, bool) {
 	return learned.ValueForKey(key), true
 }
 
+func (s *Suffren) ValueForKeyLocal(key string) uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.localCounters.ValueForKey(key)
+}
+
 // Stops the node and its network service gracefully.
 func (s *Suffren) Stop() {
 	s.node.Stop()

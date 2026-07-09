@@ -45,6 +45,19 @@ func (l *Limiter) buildKey(identifier string, resource string, rule Rule, window
 // Evaluates whether the request is allowed (sliding window counter).
 // It executes in a single atomic-like operation.
 func (l *Limiter) Check(identifier string, resource string, value uint64, rule Rule) Decision {
+	consumedLocal := l.getTotalCountInSlidingWindowLocal(identifier, resource, rule)
+
+	if consumedLocal >= rule.Limit {
+		return Decision{
+			Allowed:   false,
+			Current:   rule.Limit,
+			Limit:     rule.Limit,
+			Remaining: 0,
+			ResetAt:   l.clock().Truncate(rule.Window).Add(rule.Window), // The end of the current window
+			Error:     nil,
+		}
+	}
+
 	consumed, ok := l.incrementAndGetTotalCountInSlidingWindow(identifier, resource, value, rule)
 
 	if !ok {
@@ -62,9 +75,9 @@ func (l *Limiter) Check(identifier string, resource string, value uint64, rule R
 
 	return Decision{
 		Allowed:   allowed,
-		Current:   consumed,
+		Current:   min(consumed, rule.Limit),
 		Limit:     rule.Limit,
-		Remaining: remaining,
+		Remaining: max(remaining, 0),
 		ResetAt:   l.clock().Truncate(rule.Window).Add(rule.Window), // The end of the current window
 		Error:     nil,
 	}
@@ -82,9 +95,9 @@ func (l *Limiter) Status(identifier string, resource string, rule Rule) Decision
 	remaining := rule.Limit - consumed
 
 	return Decision{
-		Current:   consumed,
+		Current:   min(consumed, rule.Limit),
 		Limit:     rule.Limit,
-		Remaining: remaining,
+		Remaining: max(remaining, 0),
 		ResetAt:   l.clock().Truncate(rule.Window).Add(rule.Window), // The end of the current window
 		Error:     nil,
 	}
@@ -150,4 +163,29 @@ func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource strin
 	total := uint64(estimatedTotal)
 
 	return total, true
+}
+
+// get the consumed value the node sees locally during the sliding window of the given identifier/resource/rule
+func (l *Limiter) getTotalCountInSlidingWindowLocal(identifier string, resource string, rule Rule) uint64 {
+	now := l.clock()
+
+	currentWindowStart := now.Truncate(rule.Window)
+	previousWindowStart := currentWindowStart.Add(-rule.Window)
+
+	currentKey := l.buildKey(identifier, resource, rule, currentWindowStart)
+	previousKey := l.buildKey(identifier, resource, rule, previousWindowStart)
+
+	prevCount := l.suffren.ValueForKeyLocal(previousKey)
+
+	currentCount := l.suffren.ValueForKeyLocal(currentKey)
+
+	// Calculate the Sliding Window estimate
+	// Formula: (Previous Window Count * Overlap Weight) + Current Window Count
+	spentTimeInCurrentWindow := now.Sub(currentWindowStart)
+	weightOfPreviousWindow := 1.0 - (float64(spentTimeInCurrentWindow) / float64(rule.Window))
+
+	estimatedTotal := float64(prevCount)*weightOfPreviousWindow + float64(currentCount)
+	total := uint64(estimatedTotal)
+
+	return total
 }
