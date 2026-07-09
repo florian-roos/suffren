@@ -117,7 +117,7 @@ go run cmd/suffren/main.go --id N3
 To start a node in production (API) mode:
 
 ```bash
-go run cmd/suffren/main.go --api --id N1 --api-port 8081
+go run ./cmd/suffren --api --id N1 --api-port 8081
 ```
 
 | Flag         | Default | Description                                  |
@@ -207,18 +207,17 @@ cmd/
     main.go             # Flag parsing, .env loading, node/API startup
 
 internal/
+  config/               # Configuration types and DefaultConfig
   api/                  # HTTP API server (POST /check, POST /status)
   crdt/                 # Lattice interface, GCounter, CounterMap
-  lattice-agreement/    # Proposer, Acceptor, Learner, MessageRouter
+  engine/               # Counter map engine (Start, IncrementKey, ValueForKey, Stop)
+  latticeagreement/     # Proposer, Acceptor, Learner, MessageRouter
+  limiter/              # Sliding-window rate limiter on the CRDT counter
   node/                 # Node lifecycle (Start/Stop, message dispatch)
   p2p/                  # TCP transport (Server, Client, Connection, Network)
   protocol/             # Message and Command wire types (gob-encoded)
-  ratelimiter/          # Sliding-window rate limiter on the CRDT counter
-
-pkg/
-  config/               # Configuration types and DefaultConfig
-  suffren/              # Public API (NewSuffren, Start, IncrementKey, ValueForKey, Stop)
-  utils/                # Jitter, Retry helpers
+  retry/                # Jitter, Retry helpers
+  testutils/            # Local peers generator
 ```
 
 ## Dependencies
