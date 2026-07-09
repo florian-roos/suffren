@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/testutils"
 	"github.com/florian-roos/suffren/pkg/config"
 )
 
@@ -24,22 +25,14 @@ func configForTest() *config.Config {
 	return cfg
 }
 
-// Returns a map of 3 nodes with their associated localhost (8001, 8002 and 8003)
+// Returns a map of 3 nodes with their associated localhost (dynamic ports)
 func peers3() map[crdt.NodeId]string {
-	return map[crdt.NodeId]string{
-		"N1": "localhost:8001",
-		"N2": "localhost:8002",
-		"N3": "localhost:8003",
-	}
+	return testutils.GeneratePeers3()
 }
 
-// Returns a map of 3 nodes different from peers3() with their associated localhost (8001, 8002 and 8003)
+// Returns a map of 3 nodes different from peers3() with their associated localhost (dynamic ports)
 func peers3bis() map[crdt.NodeId]string {
-	return map[crdt.NodeId]string{
-		"N1": "localhost:8011",
-		"N2": "localhost:8012",
-		"N3": "localhost:8013",
-	}
+	return peers3() // Now it's dynamic so we can just reuse peers3()!
 }
 
 // startCluster creates and starts all 3 nodes. Returns them and a cleanup func.

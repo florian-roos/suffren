@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/testutils"
 	"github.com/florian-roos/suffren/pkg/config"
 	"github.com/florian-roos/suffren/pkg/suffren"
 )
@@ -15,11 +16,7 @@ func configForTest() *config.Config {
 }
 
 func peers3() map[crdt.NodeId]string {
-	return map[crdt.NodeId]string{
-		"N1": "localhost:8031",
-		"N2": "localhost:8032",
-		"N3": "localhost:8033",
-	}
+	return testutils.GeneratePeers3()
 }
 
 func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *suffren.Suffren) {
