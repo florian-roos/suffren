@@ -1,4 +1,4 @@
-package suffren
+package engine
 
 import (
 	"io"
@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/florian-roos/suffren/internal/config"
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/testutils"
-	"github.com/florian-roos/suffren/pkg/config"
 )
 
 func init() {
@@ -36,7 +36,7 @@ func peers3bis() map[crdt.NodeId]string {
 }
 
 // startCluster creates and starts all 3 nodes. Returns them and a cleanup func.
-func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suffren) {
+func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Engine) {
 	tb.Helper()
 	cfg := configForTest()
 
@@ -45,14 +45,14 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suff
 		ids = append(ids, id)
 	}
 
-	s1 = NewSuffren(ids[0], peers, cfg)
-	s2 = NewSuffren(ids[1], peers, cfg)
-	s3 = NewSuffren(ids[2], peers, cfg)
+	s1 = New(ids[0], peers, cfg)
+	s2 = New(ids[1], peers, cfg)
+	s3 = New(ids[2], peers, cfg)
 
 	var wg sync.WaitGroup
-	for _, s := range []*Suffren{s1, s2, s3} {
+	for _, s := range []*Engine{s1, s2, s3} {
 		wg.Add(1)
-		go func(node *Suffren) {
+		go func(node *Engine) {
 			defer wg.Done()
 			err := node.Start()
 			if err != nil {
@@ -72,7 +72,7 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *Suff
 }
 
 // waitForConvergence polls until all nodes report the expected value or times out.
-func waitForConvergence(tb testing.TB, key string, expected uint64, nodes ...*Suffren) {
+func waitForConvergence(tb testing.TB, key string, expected uint64, nodes ...*Engine) {
 	tb.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

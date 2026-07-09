@@ -1,4 +1,4 @@
-package suffren
+package engine
 
 import (
 	"testing"
@@ -40,7 +40,7 @@ func BenchmarkConcurrentLocalIncrements(b *testing.B) {
 func BenchmarkClusterIncrements(b *testing.B) {
 	peers := peers3bis()
 	s1, s2, s3 := startCluster(b, peers)
-	nodes := []*Suffren{s1, s2, s3}
+	nodes := []*Engine{s1, s2, s3}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -77,7 +77,7 @@ func BenchmarkValueForKey(b *testing.B) {
 func BenchmarkClusterValueForKey(b *testing.B) {
 	peers := peers3bis()
 	s1, s2, s3 := startCluster(b, peers)
-	nodes := []*Suffren{s1, s2, s3}
+	nodes := []*Engine{s1, s2, s3}
 
 	// We increment one time to have a value
 	s1.IncrementKey("bench_key", 1)

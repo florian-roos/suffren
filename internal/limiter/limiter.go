@@ -1,10 +1,10 @@
-package ratelimiter
+package limiter
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/florian-roos/suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/engine"
 )
 
 // Decision represents the outcome of a rate limit check.
@@ -24,14 +24,14 @@ type Rule struct {
 }
 
 type Limiter struct {
-	suffren *suffren.Suffren
-	clock   func() time.Time // Injectable clock for deterministic testing
+	engine *engine.Engine
+	clock  func() time.Time // Injectable clock for deterministic testing
 }
 
-func NewLimiter(s *suffren.Suffren) *Limiter {
+func NewLimiter(s *engine.Engine) *Limiter {
 	return &Limiter{
-		suffren: s,
-		clock:   time.Now,
+		engine: s,
+		clock:  time.Now,
 	}
 }
 
@@ -113,12 +113,12 @@ func (l *Limiter) incrementAndGetTotalCountInSlidingWindow(identifier string, re
 	currentKey := l.buildKey(identifier, resource, rule, currentWindowStart)
 	previousKey := l.buildKey(identifier, resource, rule, previousWindowStart)
 
-	prevCount, ok := l.suffren.ValueForKey(previousKey)
+	prevCount, ok := l.engine.ValueForKey(previousKey)
 	if !ok {
 		return 0, false
 	}
 
-	currentCount, ok := l.suffren.IncrementKey(currentKey, value)
+	currentCount, ok := l.engine.IncrementKey(currentKey, value)
 	if !ok {
 		return 0, false
 	}
@@ -144,12 +144,12 @@ func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource strin
 	currentKey := l.buildKey(identifier, resource, rule, currentWindowStart)
 	previousKey := l.buildKey(identifier, resource, rule, previousWindowStart)
 
-	prevCount, ok := l.suffren.ValueForKey(previousKey)
+	prevCount, ok := l.engine.ValueForKey(previousKey)
 	if !ok {
 		return 0, false
 	}
 
-	currentCount, ok := l.suffren.ValueForKey(currentKey)
+	currentCount, ok := l.engine.ValueForKey(currentKey)
 	if !ok {
 		return 0, false
 	}
@@ -175,9 +175,9 @@ func (l *Limiter) getTotalCountInSlidingWindowLocal(identifier string, resource 
 	currentKey := l.buildKey(identifier, resource, rule, currentWindowStart)
 	previousKey := l.buildKey(identifier, resource, rule, previousWindowStart)
 
-	prevCount := l.suffren.ValueForKeyLocal(previousKey)
+	prevCount := l.engine.ValueForKeyLocal(previousKey)
 
-	currentCount := l.suffren.ValueForKeyLocal(currentKey)
+	currentCount := l.engine.ValueForKeyLocal(currentKey)
 
 	// Calculate the Sliding Window estimate
 	// Formula: (Previous Window Count * Overlap Weight) + Current Window Count

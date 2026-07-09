@@ -1,4 +1,4 @@
-package ratelimiter
+package limiter
 
 import (
 	"sync"
@@ -7,8 +7,8 @@ import (
 
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/testutils"
-	"github.com/florian-roos/suffren/pkg/config"
-	"github.com/florian-roos/suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/config"
+	"github.com/florian-roos/suffren/internal/engine"
 )
 
 func configForTest() *config.Config {
@@ -19,7 +19,7 @@ func peers3() map[crdt.NodeId]string {
 	return testutils.GeneratePeers3()
 }
 
-func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *suffren.Suffren) {
+func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *engine.Engine) {
 	tb.Helper()
 	cfg := configForTest()
 
@@ -30,14 +30,14 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *suff
 		ports = append(ports, addr[len("localhost:"):])
 	}
 
-	s1 = suffren.NewSuffren(ids[0], peers, cfg)
-	s2 = suffren.NewSuffren(ids[1], peers, cfg)
-	s3 = suffren.NewSuffren(ids[2], peers, cfg)
+	s1 = engine.New(ids[0], peers, cfg)
+	s2 = engine.New(ids[1], peers, cfg)
+	s3 = engine.New(ids[2], peers, cfg)
 
 	var wg sync.WaitGroup
-	for _, s := range []*suffren.Suffren{s1, s2, s3} {
+	for _, s := range []*engine.Engine{s1, s2, s3} {
 		wg.Add(1)
-		go func(node *suffren.Suffren) {
+		go func(node *engine.Engine) {
 			defer wg.Done()
 			if err := node.Start(); err != nil {
 				tb.Errorf("failed to start node: %v", err)

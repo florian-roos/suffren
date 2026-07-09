@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/florian-roos/suffren/internal/ratelimiter"
+	"github.com/florian-roos/suffren/internal/limiter"
 )
 
 type Request struct {
@@ -34,7 +34,7 @@ type StatusResponse struct {
 
 type Server struct {
 	router  *http.ServeMux
-	limiter *ratelimiter.Limiter
+	limiter *limiter.Limiter
 }
 
 // RouterForTest returns the HTTP router for testing purposes.
@@ -42,7 +42,7 @@ func (s *Server) RouterForTest() http.Handler {
 	return s.router
 }
 
-func NewServer(limiter *ratelimiter.Limiter) *Server {
+func NewServer(limiter *limiter.Limiter) *Server {
 	s := &Server{
 		router:  http.NewServeMux(),
 		limiter: limiter,
@@ -69,7 +69,7 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decision := s.limiter.Check(req.Identifier, req.Resource, req.ValueRequested, ratelimiter.Rule{Limit: req.Limit, Window: window})
+	decision := s.limiter.Check(req.Identifier, req.Resource, req.ValueRequested, limiter.Rule{Limit: req.Limit, Window: window})
 
 	if decision.Error != nil {
 		http.Error(w, "Timeout, network unreachable", http.StatusServiceUnavailable)
@@ -99,7 +99,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status := s.limiter.Status(req.Identifier, req.Resource, ratelimiter.Rule{Limit: req.Limit, Window: window})
+	status := s.limiter.Status(req.Identifier, req.Resource, limiter.Rule{Limit: req.Limit, Window: window})
 
 	if status.Error != nil {
 		http.Error(w, "Ratelimite unavailable", http.StatusServiceUnavailable)

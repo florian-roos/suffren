@@ -8,9 +8,9 @@ import (
 
 	"github.com/florian-roos/suffren/internal/api"
 	"github.com/florian-roos/suffren/internal/crdt"
-	"github.com/florian-roos/suffren/internal/ratelimiter"
-	"github.com/florian-roos/suffren/pkg/config"
-	"github.com/florian-roos/suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/limiter"
+	"github.com/florian-roos/suffren/internal/config"
+	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/joho/godotenv"
 )
 
@@ -27,8 +27,8 @@ func main() {
 
 	peers := parseStringToPeersMap(os.Getenv("PEERS"))
 
-	node := suffren.NewSuffren(crdt.NodeId(*nodeId), peers, config.DefaultConfig())
-	limiter := ratelimiter.NewLimiter(node)
+	node := engine.New(crdt.NodeId(*nodeId), peers, config.DefaultConfig())
+	limiter := limiter.NewLimiter(node)
 	apiServer := api.NewServer(limiter)
 
 	if *runAPI {

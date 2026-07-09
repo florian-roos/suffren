@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/florian-roos/suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/engine"
 )
 
 // CLI entry point for the Suffren application to test it manually on a few nodes
-func startInteractiveCLI(node *suffren.Suffren) {
+func startInteractiveCLI(node *engine.Engine) {
 	fmt.Printf("Node initialized. Press [s] to start\n")
 
 	scanner := bufio.NewScanner(os.Stdin)

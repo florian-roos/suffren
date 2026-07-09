@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/florian-roos/suffren/internal/crdt"
-	"github.com/florian-roos/suffren/internal/ratelimiter"
+	"github.com/florian-roos/suffren/internal/limiter"
 	"github.com/florian-roos/suffren/internal/testutils"
-	"github.com/florian-roos/suffren/pkg/config"
-	"github.com/florian-roos/suffren/pkg/suffren"
+	"github.com/florian-roos/suffren/internal/config"
+	"github.com/florian-roos/suffren/internal/engine"
 )
 
 func configForTest() *config.Config {
@@ -23,7 +23,7 @@ func peers3() map[crdt.NodeId]string {
 	return testutils.GeneratePeers3()
 }
 
-func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *suffren.Suffren) {
+func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *engine.Engine) {
 	tb.Helper()
 	cfg := configForTest()
 
@@ -34,14 +34,14 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *suff
 		ports = append(ports, addr[len("localhost:"):])
 	}
 
-	s1 = suffren.NewSuffren(ids[0], peers, cfg)
-	s2 = suffren.NewSuffren(ids[1], peers, cfg)
-	s3 = suffren.NewSuffren(ids[2], peers, cfg)
+	s1 = engine.New(ids[0], peers, cfg)
+	s2 = engine.New(ids[1], peers, cfg)
+	s3 = engine.New(ids[2], peers, cfg)
 
 	var wg sync.WaitGroup
-	for _, s := range []*suffren.Suffren{s1, s2, s3} {
+	for _, s := range []*engine.Engine{s1, s2, s3} {
 		wg.Add(1)
-		go func(node *suffren.Suffren) {
+		go func(node *engine.Engine) {
 			defer wg.Done()
 			if err := node.Start(); err != nil {
 				tb.Errorf("failed to start node: %v", err)
@@ -64,7 +64,7 @@ func TestNewServer_routesRegistered(t *testing.T) {
 	// WHEN: we make POST requests to the /check and /status endpoints
 	// THEN: the server responds without a 404 Not Found error
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -98,7 +98,7 @@ func TestServer_handleCheck_invalidJSON(t *testing.T) {
 	// WHEN: we send a malformed JSON payload to POST /check
 	// THEN: the server responds with a 400 Bad Request status code
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -120,7 +120,7 @@ func TestServer_handleCheck_invalidWindow(t *testing.T) {
 	// WHEN: we send a JSON payload with an invalid duration format for the "window" field to POST /check
 	// THEN: the server responds with a 400 Bad Request status code
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -148,7 +148,7 @@ func TestServer_handleCheck_allows_under_limit(t *testing.T) {
 	// WHEN: we make multiple valid requests to POST /check
 	// THEN: the server allows the requests and returns the updated quota usage
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -197,7 +197,7 @@ func TestServer_handleCheck_denies_over_limit(t *testing.T) {
 	// WHEN: we make requests that surpass the allowed limit to POST /check
 	// THEN: the server denies the excess requests and returns allowed=false
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -255,7 +255,7 @@ func TestServer_handleCheck_contentType(t *testing.T) {
 	// WHEN: we make a valid request to POST /check
 	// THEN: the server responds with the "application/json" Content-Type header
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -285,7 +285,7 @@ func TestServer_handleStatus_returns_current_without_incrementing(t *testing.T) 
 	// WHEN: we make multiple requests to POST /status
 	// THEN: the server returns the current consumption without incrementing it
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -353,7 +353,7 @@ func TestServer_handleStatus_invalidJSON(t *testing.T) {
 	// WHEN: we send a malformed JSON payload to POST /status
 	// THEN: the server responds with a 400 Bad Request status code
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -375,7 +375,7 @@ func TestServer_handleStatus_invalidWindow(t *testing.T) {
 	// WHEN: we send a JSON payload with an invalid duration format for the "window" field to POST /status
 	// THEN: the server responds with a 400 Bad Request status code
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -403,7 +403,7 @@ func TestServer_handleStatus_contentType(t *testing.T) {
 	// WHEN: we make a valid request to POST /status
 	// THEN: the server responds with the "application/json" Content-Type header
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -432,7 +432,7 @@ func TestServer_methodNotAllowed(t *testing.T) {
 	// WHEN: we make GET requests to the /check or /status endpoints
 	// THEN: the server responds with a 405 Method Not Allowed status code
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())
@@ -466,7 +466,7 @@ func TestServer_notFound(t *testing.T) {
 	// WHEN: we make a request to an unregistered endpoint
 	// THEN: the server responds with a 404 Not Found status code
 	s1, _, _ := startCluster(t, peers3())
-	limiter := ratelimiter.NewLimiter(s1)
+	limiter := limiter.NewLimiter(s1)
 	server := NewServer(limiter)
 
 	ts := httptest.NewServer(server.RouterForTest())

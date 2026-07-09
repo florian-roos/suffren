@@ -1,4 +1,4 @@
-package ratelimiter
+package limiter
 
 import (
 	"testing"

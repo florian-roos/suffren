@@ -5,9 +5,9 @@ import (
 	"sync"
 
 	"github.com/florian-roos/suffren/internal/crdt"
-	latticeagreement "github.com/florian-roos/suffren/internal/lattice-agreement"
+	latticeagreement "github.com/florian-roos/suffren/internal/latticeagreement"
 	"github.com/florian-roos/suffren/internal/protocol"
-	"github.com/florian-roos/suffren/pkg/config"
+	"github.com/florian-roos/suffren/internal/config"
 )
 
 type NetworkService interface {
