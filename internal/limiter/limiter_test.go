@@ -23,11 +23,9 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *engi
 	tb.Helper()
 	cfg := configForTest()
 
-	var ports []string
 	var ids []crdt.NodeId
-	for id, addr := range peers {
+	for id := range peers {
 		ids = append(ids, id)
-		ports = append(ports, addr[len("localhost:"):])
 	}
 
 	s1 = engine.New(ids[0], peers, cfg)

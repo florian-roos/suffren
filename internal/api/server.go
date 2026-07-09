@@ -62,7 +62,7 @@ func (s *Server) Start(address string) error {
 
 // handles the API call to check wether the request respects the limit rules
 func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	req, window, err := decodeRequest(w, r)
 	if err != nil {
@@ -87,12 +87,12 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		ResetAt:   decision.ResetAt.Format(time.RFC3339),
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handles the API call to return the status of an identifier given a resource and rule
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	req, window, err := decodeRequest(w, r)
 	if err != nil {
@@ -116,7 +116,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ResetAt:   status.ResetAt.Format(time.RFC3339),
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func decodeRequest(w http.ResponseWriter, r *http.Request) (Request, time.Duration, error) {

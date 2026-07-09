@@ -27,11 +27,9 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *engi
 	tb.Helper()
 	cfg := configForTest()
 
-	var ports []string
 	var ids []crdt.NodeId
-	for id, addr := range peers {
+	for id := range peers {
 		ids = append(ids, id)
-		ports = append(ports, addr[len("localhost:"):])
 	}
 
 	s1 = engine.New(ids[0], peers, cfg)
@@ -75,7 +73,7 @@ func TestNewServer_routesRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to POST /check: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		t.Fatal("expected /check route to be registered, got 404")
@@ -86,7 +84,7 @@ func TestNewServer_routesRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to POST /status: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		t.Fatal("expected /status route to be registered, got 404")
@@ -108,7 +106,7 @@ func TestServer_handleCheck_invalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400 for invalid JSON, got %d", resp.StatusCode)
@@ -136,7 +134,7 @@ func TestServer_handleCheck_invalidWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400 for invalid window, got %d", resp.StatusCode)
@@ -172,7 +170,7 @@ func TestServer_handleCheck_allows_under_limit(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&checkResp); err != nil {
 			t.Fatalf("decode response %d failed: %v", i, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if !checkResp.Allowed {
 			t.Errorf("expected request %d to be allowed", i)
@@ -219,8 +217,8 @@ func TestServer_handleCheck_denies_over_limit(t *testing.T) {
 		}
 
 		var checkResp CheckResponse
-		json.NewDecoder(resp.Body).Decode(&checkResp)
-		resp.Body.Close()
+		_ = json.NewDecoder(resp.Body).Decode(&checkResp)
+		_ = resp.Body.Close()
 
 		if !checkResp.Allowed {
 			t.Fatalf("expected request %d to be allowed", i)
@@ -232,7 +230,7 @@ func TestServer_handleCheck_denies_over_limit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request 4 failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var checkResp CheckResponse
 	if err := json.NewDecoder(resp.Body).Decode(&checkResp); err != nil {
@@ -273,7 +271,7 @@ func TestServer_handleCheck_contentType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("expected Content-Type to be application/json, got %s", ct)
@@ -303,7 +301,7 @@ func TestServer_handleStatus_returns_current_without_incrementing(t *testing.T) 
 	if err != nil {
 		t.Fatalf("check request failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Now call status
 	statusBody := map[string]any{
@@ -322,7 +320,7 @@ func TestServer_handleStatus_returns_current_without_incrementing(t *testing.T) 
 	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
 		t.Fatalf("decode status response failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if statusResp.Current != 3 {
 		t.Errorf("expected status current to be 3, got %d", statusResp.Current)
@@ -341,7 +339,7 @@ func TestServer_handleStatus_returns_current_without_incrementing(t *testing.T) 
 	if err := json.NewDecoder(resp.Body).Decode(&statusResp2); err != nil {
 		t.Fatalf("decode status response 2 failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if statusResp2.Current != 3 {
 		t.Errorf("expected status current to still be 3, got %d", statusResp2.Current)
@@ -363,7 +361,7 @@ func TestServer_handleStatus_invalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400 for invalid JSON, got %d", resp.StatusCode)
@@ -391,7 +389,7 @@ func TestServer_handleStatus_invalidWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400 for invalid window, got %d", resp.StatusCode)
@@ -420,7 +418,7 @@ func TestServer_handleStatus_contentType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("expected Content-Type to be application/json, got %s", ct)
@@ -443,7 +441,7 @@ func TestServer_methodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("expected GET /check to return 405, got %d", resp.StatusCode)
@@ -454,7 +452,7 @@ func TestServer_methodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("expected GET /status to return 405, got %d", resp.StatusCode)
@@ -476,7 +474,7 @@ func TestServer_notFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected GET /unknown to return 404, got %d", resp.StatusCode)

@@ -63,7 +63,7 @@ func (l *Limiter) Check(identifier string, resource string, value uint64, rule R
 	if !ok {
 		return Decision{
 			Allowed: false,
-			Error:   fmt.Errorf("Failed to check key: %s, resource: %s", identifier, resource),
+			Error:   fmt.Errorf("failed to check key: %s, resource: %s", identifier, resource),
 		}
 	}
 
@@ -88,7 +88,7 @@ func (l *Limiter) Status(identifier string, resource string, rule Rule) Decision
 
 	if !ok {
 		return Decision{
-			Error: fmt.Errorf("Failed to get status for key: %s, resource: %s", identifier, resource),
+			Error: fmt.Errorf("failed to get status for key: %s, resource: %s", identifier, resource),
 		}
 	}
 
