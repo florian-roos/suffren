@@ -1,101 +1,110 @@
-# Suffren: Distributed Rate Limiter powered by Lattice Agreement
+# Suffren — Distributed Rate Limiter Powered by Lattice Agreement
 
-## Overview
+## The Problem
 
-Suffren is a distributed, quorum-based rate limiter built on top of a replicated CRDT counter. Standard consensus algorithms like Paxos enforce a total order through stable leader election, which is overly restrictive for monotonic state. Conversely, gossip protocols provide eventual consistency but lack a deterministic commit barrier, meaning the system cannot mathematically guarantee when a value has fully converged.
+Imagine you run an API gateway with multiple instances behind a load balancer. You need to enforce rate limits like "each user can make at most 100 requests per minute." On a single server, this is trivial — a counter and a timestamp. But across multiple instances, the counter must be shared. Where do you store it?
 
-Suffren implements a `CounterMap` (a map of named `GCounter` instances) using Lattice Agreement. It trades the O(N log N) messaging overhead of gossip for an O(N^3) worst-case complexity to guarantee a strict synchronization barrier. Any node can increment a counter key and propose it. When a quorum agrees, every node deterministically adopts the merged value.
+**Option 1: A central database (e.g., Redis).** Every request triggers a network round-trip to check and increment the counter. The database becomes a single point of failure and a throughput bottleneck. If it goes down, either rate limiting stops working or your entire API does.
 
-On top of this consensus layer, Suffren provides a sliding-window rate limiter exposed through a simple HTTP API. Each rate limit decision (identifier + resource + rule) is mapped to deterministic CRDT keys, so the cluster maintains a globally consistent view of consumption across all nodes.
+**Option 2: Gossip-based eventual consistency.** Each node maintains its own copy of the counters and periodically syncs with peers. This is fast and fault-tolerant, but there is no guarantee on _when_ the counters converge. Two nodes might simultaneously believe a user is under the limit, both allow the request, and the real count overshoots. There is no commit barrier.
 
-## How It Works
+**Option 3: Full consensus (e.g., Raft/Paxos).** A leader totally orders all operations. This is safe, but it is overkill for monotonic counters — you don't need a total order, you just need to know the maximum. Leader election adds latency and complexity, and the leader is a bottleneck under load.
 
-### Distributed Counter (Lattice Agreement)
+Suffren explores a fourth approach.
 
-The underlying object is a `CounterMap` mapped to a bounded join-semilattice (C, ⊑, ⊔, ⊥):
+## What Is Suffren?
 
-- **State space:** C = Key → (NodeId → ℕ)
-- **Partial order:** c1 ⊑ c2 ⇔ ∀k, ∀n: c1[k][n] ≤ c2[k][n]
-- **Join operation:** (c1 ⊔ c2)[k][n] = max(c1[k][n], c2[k][n])
-- **Bottom element** ⊥: The all-zero map
+Suffren is a distributed rate limiter that uses **Lattice Agreement** — a consensus protocol designed specifically for monotonic state (counters that only grow). Instead of enforcing a total order like Paxos, it only guarantees that all nodes eventually agree on the _join_ (component-wise maximum) of all proposed values. This is a weaker — and therefore faster — guarantee than total-order consensus, but it is sufficient for counters.
 
-Each node maintains a local `CounterMap` and proposes it through Lattice Agreement. The `onLearn` callback merges the learned value and unblocks any pending `IncrementKey` or `ValueForKey` operation whose proposed value is contained in the learned state, providing linearizable semantics for the caller.
+The result: any node can accept a rate limit decision locally, propagate it to the cluster, and receive a deterministic confirmation that a quorum has adopted the value. No leader, no single point of failure, and a strict synchronization barrier that gossip cannot provide.
 
-### Rate Limiter (Sliding Window)
+### Key Features
 
-The rate limiter implements a sliding-window counter algorithm on top of the distributed `CounterMap`:
+- **No central coordinator** — All nodes are equal; any node can accept and propagate rate limit decisions.
+- **Linearizable reads and writes** — A `Check` or `Status` call blocks until a quorum has confirmed the value, so clients never see stale data.
+- **Fault-tolerant** — Tolerates network partitions and node crashes (as long as a quorum remains reachable).
+- **Sliding-window rate limiting** — Supports per-identifier, per-resource limits with configurable time windows.
+- **HTTP API** — Drop-in rate limiting service with a simple JSON API.
+- **Standard library networking** — TCP transport with `encoding/gob` serialization; no external messaging dependencies.
 
-- Each (identifier, resource, rule) tuple is mapped to two deterministic keys: one for the **current** window and one for the **previous** window.
-- The estimated total consumption is computed as:
+## Architecture
 
-  `total = (previous_count × overlap_weight) + current_count`
+Each node runs three independent roles as separate goroutines, each with its own mailbox (channel). This isolation prevents deadlocks during concurrent network I/O — a proposer waiting for quorum does not block the acceptor from handling incoming proposals from other nodes.
 
-  where `overlap_weight = 1 - (elapsed_time_in_current_window / window_duration)`.
+```
+┌─────────────────────────────────────────────────────────┐
+│                        Node                             │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │  Proposer   │  │  Acceptor   │  │   Learner    │     │
+│  │             │  │             │  │              │     │
+│  │ Broadcasts  │  │ Validates   │  │ Commits and  │     │
+│  │ PROPOSE,    │  │ proposals, │  │ re-broadcasts│     │
+│  │ collects    │  │ replies    │  │ LEARN values │     │
+│  │ ACKs/NACKs  │  │ ACK or NACK│  │              │     │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘     │
+│         │                │                │             │
+│         └────────────────┴────────────────┘             │
+│                          │                              │
+│                  ┌───────┴───────┐                      │
+│                  │ MessageRouter │                      │
+│                  │ (dispatches   │                      │
+│                  │  by type)     │                      │
+│                  └───────┬───────┘                      │
+│                          │                              │
+│                  ┌───────┴───────┐                      │
+│                  │  P2P Network  │                      │
+│                  │  (TCP + gob)  │                      │
+│                  └───────────────┘                      │
+└─────────────────────────────────────────────────────────┘
+```
 
-- `Check` first performs a **local** read to short-circuit if the limit is already exceeded (avoiding a cluster round-trip). Otherwise, it increments the current window counter through the cluster and returns the decision.
-- `Status` performs a read-only quorum query to get the current consumption without incrementing.
+### The Three Roles
 
-## Architecture and Role Isolation
+**Proposer** — A node wants to propagate its local counter state (e.g., after a rate limit check incremented a counter). It broadcasts `PROPOSE(value)` to all peers. If a quorum of acceptors reply `ACK`, the value is committed and the proposer broadcasts `LEARN`. If any acceptor replies `NACK` (because it has seen a higher value), the proposer merges that value into its proposal and retries. This loop is bounded — each NACK forces a strictly upward move in the lattice, so the proposer can only retry a finite number of times before its value dominates everything.
 
-To guarantee consistency during concurrent updates and network partitions, each node implements three strictly isolated roles. Each role operates with independent mutexes and its own mailbox (channel), preventing deadlocks during concurrent network I/O.
+**Acceptor** — Each node also acts as an acceptor for other nodes' proposals. It maintains the highest value it has accepted. When it receives `PROPOSE(v)`, it checks whether its accepted value is below `v` in the lattice. If so, it accepts and replies `ACK`. If not, it replies `NACK` with its current accepted value, helping the proposer converge. The quorum intersection property guarantees that once a value is learned, any future proposal must overlap with at least one node that has seen it — so the proposer is forced to adopt the higher value.
 
-### 1. Proposer
+**Learner** — On receiving `LEARN(v)`, if `v` is strictly greater than the node's current learned value, the learner applies it locally and re-broadcasts `LEARN` to all other peers. This gossip-style dissemination ensures reliable delivery even if the original proposer crashes after sending the first `LEARN`. Re-broadcasting only on strict growth prevents infinite loops.
 
-The proposer initiates agreement rounds. It maintains `bufferedValue`, which is the join (⊔) of all values seen during the current round.
+### Rate Limiter Layer
 
-- The proposer broadcasts `PROPOSE(bufferedValue)`.
-- If a quorum of `ACK`s is received, the state is committed, and it broadcasts `LEARN`.
-- If a `NACK(payload)` is received, it merges the missing state into its buffer. Since the system must work even during network partitions, the proposer waits for a quorum of responses and re-proposes with the accumulated value.
+On top of the consensus layer, Suffren implements a **sliding-window counter** rate limiter. Each rate limit rule (identifier + resource + limit + window) is mapped to deterministic CRDT keys based on the window's start timestamp:
 
-### 2. Acceptor
+```
+Key format: <identifier>:<resource>:<window_seconds>:<window_start_RFC3339>
+```
 
-The acceptor guarantees the consistency of accepted values across concurrent proposals. It maintains `acceptedValue`, the ⊔ of all accepted proposals.
+For each check, two keys are used — one for the current time window and one for the previous window. The estimated consumption is a weighted sum:
 
-For a received `PROPOSE(v)`:
+```
+total = (previous_window_count × overlap_weight) + current_window_count
+```
 
-- If `acceptedValue` ⊑ v, the acceptor updates and returns `ACK`.
-- If `acceptedValue` ⋢ v, it returns `NACK(acceptedValue)` with the join of both values to help the proposer converge.
-  Because of the quorum intersection property, if a `LEARN` barrier is reached, any future proposal must overlap with a node that has the accepted state, forcing the proposer to adopt the higher lattice state.
+where `overlap_weight` decreases linearly from 1 to 0 as the current window progresses. This gives a smooth sliding-window approximation without storing individual request timestamps.
 
-### 3. Learner (Commit)
-
-The learner handles the deterministic commit. On receiving `LEARN(v)`, if v strictly dominates the node's `learnedValue`, it applies the value locally and re-broadcasts `LEARN` to all other peers. This ensures reliable delivery and prevents the system from blocking if the original proposer crashes before full dissemination.
-
-### Message Router
-
-All three roles run as independent goroutines with dedicated mailboxes. The `MessageRouter` dispatches incoming messages to the appropriate role based on the command type (`PROPOSE` → acceptor, `ACK`/`NACK` → proposer, `LEARN` → learner). If a mailbox is full, messages are dropped safely since the proposer will re-converge the cluster.
-
-## Complexity and Fault Tolerance
-
-### Time Complexity (Propose rounds before a new value is committed)
-
-- **Uncontended:** O(1) rounds (1 round-trip: PROPOSE → quorum of ACKs → LEARN).
-- **Maximum contention:** O(N) rounds. Each NACK forces a strictly upward lattice move.
-
-### Message Complexity
-
-- **Worst case:** O(N^3) if all N nodes propose simultaneously. (Further optimizations are planned to reduce this complexity.)
+The `Check` operation first performs a **local** (non-quorum) read to short-circuit if the limit is already exceeded, avoiding an unnecessary cluster round-trip. Only if the local estimate is under the limit does it increment the counter through the cluster and return the authoritative decision.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.24+
-- A `.env` file defining the cluster peers (see Configuration below)
+- A `.env` file defining the cluster topology (see below)
 
 ### Configuration
 
-Suffren reads cluster configuration from a `.env` file in the working directory. The `PEERS` environment variable defines the cluster topology as a comma-separated list of `NodeId:address` pairs:
+Create a `.env` file in the working directory:
 
 ```env
 PEERS=N1:localhost:8031,N2:localhost:8032,N3:localhost:8033
 ```
 
-Each node must be started with a unique `--id` matching one of the peer IDs.
+Each entry is `NodeId:address`. Every node in the cluster must have the same `PEERS` list.
 
-### Running a local 3-node cluster
+### Running a Local Cluster
 
-Open three terminals and run each command in a separate one:
+Open three terminals and start one node in each:
 
 ```bash
 go run cmd/suffren/main.go --id N1
@@ -103,17 +112,13 @@ go run cmd/suffren/main.go --id N2
 go run cmd/suffren/main.go --id N3
 ```
 
-Each node reads the `PEERS` map from `.env`, binds its TCP port, and begins the protocol.
+### Running the HTTP API
 
-### Running the HTTP API server
-
-To start a node in API mode (production use):
+To start a node in production (API) mode:
 
 ```bash
 go run cmd/suffren/main.go --api --id N1 --api-port 8081
 ```
-
-Flags:
 
 | Flag         | Default | Description                                  |
 | ------------ | ------- | -------------------------------------------- |
@@ -121,15 +126,13 @@ Flags:
 | `--id`       | `N1`    | Unique node identifier in the cluster        |
 | `--api-port` | `8080`  | Listening port for the HTTP API              |
 
-### HTTP API
+## HTTP API
 
-The API exposes two endpoints:
+### `POST /check`
 
-#### `POST /check`
+Checks whether a request is allowed and atomically increments the counter.
 
-Checks whether a request is allowed under the rate limit and increments the counter atomically.
-
-Request body:
+**Request:**
 
 ```json
 {
@@ -141,7 +144,7 @@ Request body:
 }
 ```
 
-Response (`200 OK`):
+**Response (200 OK):**
 
 ```json
 {
@@ -153,25 +156,15 @@ Response (`200 OK`):
 }
 ```
 
-If the cluster is unavailable (timeout), returns `503 Service Unavailable`.
+Returns `503 Service Unavailable` if the cluster times out.
 
-#### `POST /status`
+### `POST /status`
 
-Returns the current consumption for an identifier and resource without incrementing.
+Returns the current consumption without incrementing.
 
-Request body (same as `/check`, `value_requested` is ignored):
+**Request:** Same body as `/check` (`value_requested` is ignored).
 
-```json
-{
-  "identifier": "user123",
-  "resource": "api_requests",
-  "limit": 100,
-  "window": "60s",
-  "value_requested": 0
-}
-```
-
-Response (`200 OK`):
+**Response (200 OK):**
 
 ```json
 {
@@ -182,20 +175,18 @@ Response (`200 OK`):
 }
 ```
 
-### Interactive CLI (testing mode)
+## Interactive CLI
 
 When started without `--api`, Suffren launches an interactive CLI for manual testing:
 
 ```text
-s              : Start the node (bind TCP port, begin protocol)
-i <key> [val]  : Increment the counter for <key> by [val] (default 1), blocks until LEARN
-v <key>        : Quorum read of the counter value for <key> (linearizable)
-q              : Graceful shutdown
+s              Start the node (bind TCP port, begin protocol)
+i <key> [val]  Increment the counter for <key> by [val] (default 1), blocks until LEARN
+v <key>        Quorum read of the counter value for <key> (linearizable)
+q              Graceful shutdown
 ```
 
 ## Testing
-
-The system is tested against simulated network failures to verify safety properties. The test suite includes unit tests, race detection, and benchmarks.
 
 ```bash
 # Run all tests with the race detector
@@ -213,16 +204,16 @@ The CI pipeline (`.github/workflows/ci.yaml`) runs `go vet`, `go test -race`, an
 cmd/
   suffren/              # Entry point — CLI and API server
     cli.go              # Interactive CLI for manual testing
-    main.go             # main(): flag parsing, .env loading, node/API startup
+    main.go             # Flag parsing, .env loading, node/API startup
 
 internal/
   api/                  # HTTP API server (POST /check, POST /status)
   crdt/                 # Lattice interface, GCounter, CounterMap
-  lattice-agreement/    # Proposer, Acceptor, Learner, MessageRouter (actor/mailbox model)
-  node/                 # Node lifecycle (Start/Stop, incoming message dispatch)
+  lattice-agreement/    # Proposer, Acceptor, Learner, MessageRouter
+  node/                 # Node lifecycle (Start/Stop, message dispatch)
   p2p/                  # TCP transport (Server, Client, Connection, Network)
   protocol/             # Message and Command wire types (gob-encoded)
-  ratelimiter/          # Sliding-window rate limiter built on the CRDT counter
+  ratelimiter/          # Sliding-window rate limiter on the CRDT counter
 
 pkg/
   config/               # Configuration types and DefaultConfig
@@ -234,7 +225,49 @@ pkg/
 
 - [godotenv](https://github.com/joho/godotenv) — `.env` file loading
 
-All other functionality uses the Go standard library. The wire protocol uses `encoding/gob` for message serialization over TCP.
+All other functionality uses the Go standard library.
+
+---
+
+## Technical Foundations
+
+This section provides the formal mathematical model and complexity analysis that underpin Suffren's correctness guarantees.
+
+### Lattice Model
+
+The underlying data structure is a `CounterMap` — a map from string keys to `GCounter` instances. Each `GCounter` is itself a map from `NodeId` to a natural number. The `CounterMap` forms a bounded join-semilattice (C, ⊑, ⊔, ⊥):
+
+- **State space:** C = Key → (NodeId → ℕ)
+- **Partial order:** c1 ⊑ c2 ⇔ ∀k, ∀n: c1[k][n] ≤ c2[k][n]
+- **Join (⊔):** (c1 ⊔ c2)[k][n] = max(c1[k][n], c2[k][n])
+- **Bottom (⊥):** The all-zero map
+
+The join operation is **idempotent** (v ⊔ v = v), **commutative** (v ⊔ w = w ⊔ v), and **associative**. This means the order in which proposals arrive does not matter — the final converged value is always the same.
+
+### Linearizability via `onLearn`
+
+When a caller invokes `IncrementKey` or `ValueForKey`, the node registers a pending operation with its proposed value and blocks. The `onLearn` callback fires whenever a new value is learned. It merges the learned value into the local state and signals the pending operation **only if** the learned value dominates the proposed value (`proposedValue ⊑ learnedValue`). This guarantees that the caller's increment is reflected in the committed state before it receives a response — a linearizable semantics.
+
+### Complexity Analysis
+
+**Time (rounds to commit):**
+
+- **Uncontended (single proposer):** O(1) — one round-trip: PROPOSE → quorum of ACKs → LEARN.
+- **Maximum contention (N concurrent proposers):** O(N) — each NACK forces the proposer to join a strictly higher value. The lattice height is bounded by the number of distinct proposed values (at most N), so a proposer can receive at most O(N) NACKs before its value dominates all others.
+
+**Messages (worst case, N concurrent proposers):**
+
+Each round for a single proposer costs O(N) messages (1 broadcast to N peers + up to N ACK/NACK replies). With O(N) rounds per proposer and N proposers, the total is O(N³) messages in the worst case.
+
+This is the known complexity of Lattice Agreement with concurrent proposers. It is more expensive than gossip (O(N log N)), but the tradeoff buys a **strict synchronization barrier**: when a proposer receives its LEARN confirmation, it knows with mathematical certainty that a quorum has adopted its value. Gossip cannot provide this guarantee.
+
+**LEARN dissemination:** Each successful proposer broadcasts LEARN to N peers, and each receiving node re-broadcasts once (only on strict growth). This adds O(N²) messages, dominated by the O(N³) proposal phase.
+
+### Fault Tolerance
+
+- **Network partitions:** If a proposer cannot reach a quorum, it times out and the caller receives an error. The cluster continues operating with the reachable majority.
+- **Node crashes:** If the original proposer crashes after sending LEARN but before full dissemination, the learner's re-broadcast ensures the value still propagates to all nodes.
+- **Mailbox overflow:** If a role's mailbox is full, incoming messages are dropped. This is safe because the proposer will re-converge the cluster on the next round — no data is lost since the CRDT state is monotonic.
 
 ## Why "Suffren"?
 
