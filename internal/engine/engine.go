@@ -11,6 +11,7 @@ import (
 	latticeagreement "github.com/florian-roos/suffren/internal/latticeagreement"
 	"github.com/florian-roos/suffren/internal/node"
 	"github.com/florian-roos/suffren/internal/p2p"
+	"github.com/florian-roos/suffren/internal/storage"
 )
 
 // Tracks an in-flight operation (IncrementKey or ValueForKey) so that
@@ -30,23 +31,34 @@ type Engine struct {
 	flushTrigger  chan struct{}
 	la            *latticeagreement.LatticeAgreement
 	cfg           *config.Config
+	storage       storage.Storage
 }
 
-func New(nodeId crdt.NodeId, peers map[crdt.NodeId]string, config *config.Config) *Engine {
+func New(nodeId crdt.NodeId, peers map[crdt.NodeId]string, cfg *config.Config, store storage.Storage) *Engine {
 	var nodeIds []crdt.NodeId
-	for nodeId := range peers {
-		nodeIds = append(nodeIds, nodeId)
+	for id := range peers {
+		nodeIds = append(nodeIds, id)
 	}
 
 	address := peers[nodeId]
 
+	// Load previous state from disk, or start fresh
+	state, err := store.Load(nodeIds)
+	if err != nil {
+		slog.Error("failed to load state from storage, starting fresh", "error", err)
+		state = crdt.NewCounterMap(nodeIds)
+	} else {
+		slog.Info("loaded state from storage successfully")
+	}
+
 	engine := &Engine{
-		localCounters: crdt.NewCounterMap(nodeIds),
+		localCounters: state,
 		opID:          0,
 		pending:       make(map[uint64]*pendingOp),
 		unflushedOps:  0,
 		flushTrigger:  make(chan struct{}, 1),
-		cfg:           config,
+		cfg:           cfg,
+		storage:       store,
 	}
 	network := p2p.NewNetwork(address, peers)
 
@@ -56,10 +68,10 @@ func New(nodeId crdt.NodeId, peers map[crdt.NodeId]string, config *config.Config
 		network,
 		engine.localCounters.Bottom(),
 		engine.onLearn(),
-		&config.LatticeAgreement,
+		&cfg.LatticeAgreement,
 	)
 
-	engine.node = node.NewNode(nodeId, address, peers, network, engine.la, config)
+	engine.node = node.NewNode(nodeId, address, peers, network, engine.la, cfg)
 
 	return engine
 }
@@ -160,13 +172,23 @@ func (s *Engine) flusher() {
 
 func (s *Engine) flush() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.unflushedOps == 0 {
+		s.mu.Unlock()
 		return
 	}
-	s.la.Proposer.Propose(s.localCounters)
-	s.unflushedOps = 0
 
+	// Capture the current state and reset the unflushed ops counter.
+	stateToPropose := s.localCounters.Copy()
+	s.unflushedOps = 0
+	s.mu.Unlock()
+
+	// Persist the state to disk first.
+	if err := s.storage.Save(stateToPropose); err != nil {
+		slog.Error("failed to save state to disk", "error", err)
+	}
+
+	// Propose the state to the Lattice Agreement cluster.
+	s.la.Proposer.Propose(stateToPropose)
 }
 
 // Helpers
@@ -180,7 +202,7 @@ func (s *Engine) waitForLearn(done <-chan *crdt.CounterMap, timeout time.Duratio
 	}
 }
 
-// sync() synchronizes the node with a quorum by proposing its local value. If it gets a response of a quorum,
+// sync synchronizes the node with a quorum by proposing its local value. If it gets a response of a quorum,
 // it returns true and change the localCounters. Else it return false.
 func (s *Engine) sync() bool {
 	s.mu.Lock()

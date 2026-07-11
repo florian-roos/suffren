@@ -11,6 +11,7 @@ import (
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/florian-roos/suffren/internal/limiter"
+	"github.com/florian-roos/suffren/internal/storage"
 	"github.com/joho/godotenv"
 )
 
@@ -29,7 +30,15 @@ func main() {
 	setupLogger()
 	slog.SetDefault(slog.Default().With("node_id", *nodeId))
 
-	node := engine.New(crdt.NodeId(*nodeId), peers, config.DefaultConfig())
+	cfg := config.DefaultConfig()
+
+	dataPath := os.Getenv("DATA_PATH")
+	if dataPath == "" {
+		dataPath = "./data"
+	}
+	store := storage.NewFileStorage(dataPath + "/suffren_" + *nodeId + ".json")
+
+	node := engine.New(crdt.NodeId(*nodeId), peers, cfg, store)
 	limiter := limiter.NewLimiter(node)
 	apiServer := api.NewServer(limiter)
 

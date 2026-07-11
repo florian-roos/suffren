@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/storage"
 )
 
 func TestSuffren_ValueForKey_on_an_unknown_key(t *testing.T) {
@@ -106,8 +107,8 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	cfg := configForTest()
 
 	// Start N1 and N2 concurrently so they can form a quorum (2 out of 3)
-	s1 := New(crdt.NodeId("N1"), peers, cfg)
-	s2 := New(crdt.NodeId("N2"), peers, cfg)
+	s1 := New(crdt.NodeId("N1"), peers, cfg, &storage.NoopStorage{})
+	s2 := New(crdt.NodeId("N2"), peers, cfg, &storage.NoopStorage{})
 
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
@@ -135,7 +136,7 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	}
 
 	// Now start N3
-	s3 := New(crdt.NodeId("N3"), peers, cfg)
+	s3 := New(crdt.NodeId("N3"), peers, cfg, &storage.NoopStorage{})
 	if err := s3.Start(); err != nil {
 		t.Fatalf("failed to start node 3: %v", err)
 	}

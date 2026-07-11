@@ -12,6 +12,7 @@ import (
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/florian-roos/suffren/internal/limiter"
+	"github.com/florian-roos/suffren/internal/storage"
 	"github.com/florian-roos/suffren/internal/testutils"
 )
 
@@ -32,9 +33,9 @@ func startCluster(tb testing.TB, peers map[crdt.NodeId]string) (s1, s2, s3 *engi
 		ids = append(ids, id)
 	}
 
-	s1 = engine.New(ids[0], peers, cfg)
-	s2 = engine.New(ids[1], peers, cfg)
-	s3 = engine.New(ids[2], peers, cfg)
+	s1 = engine.New(ids[0], peers, cfg, &storage.NoopStorage{})
+	s2 = engine.New(ids[1], peers, cfg, &storage.NoopStorage{})
+	s3 = engine.New(ids[2], peers, cfg, &storage.NoopStorage{})
 
 	var wg sync.WaitGroup
 	for _, s := range []*engine.Engine{s1, s2, s3} {
