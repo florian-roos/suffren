@@ -9,8 +9,6 @@ import (
 type Config struct {
 	Engine           EngineConfig           `json:"engine"`
 	LatticeAgreement LatticeAgreementConfig `json:"lattice_agreement"`
-	LogLevel         string                 `json:"log_level"`
-	LogFormat        string                 `json:"log_format"`
 }
 
 type EngineConfig struct {
@@ -54,7 +52,5 @@ func DefaultConfig() *Config {
 		LatticeAgreement: LatticeAgreementConfig{
 			MsgChanSize: 1024,
 		},
-		LogLevel:  "INFO",
-		LogFormat: "text",
 	}
 }

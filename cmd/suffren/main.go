@@ -11,6 +11,7 @@ import (
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/florian-roos/suffren/internal/limiter"
+	"github.com/florian-roos/suffren/internal/storage"
 	"github.com/joho/godotenv"
 )
 
@@ -31,7 +32,13 @@ func main() {
 	setupLogger(cfg)
 	slog.SetDefault(slog.Default().With("node_id", *nodeId))
 
-	node := engine.New(crdt.NodeId(*nodeId), peers, cfg)
+	dataPath := os.Getenv("DATA_PATH")
+	if dataPath == "" {
+		dataPath = "./data"
+	}
+	store := storage.NewFileStorage(dataPath + "/suffren_" + *nodeId + ".json")
+
+	node := engine.New(crdt.NodeId(*nodeId), peers, cfg, store)
 	limiter := limiter.NewLimiter(node)
 	apiServer := api.NewServer(limiter)
 
@@ -75,7 +82,13 @@ func parseStringToPeersMap(s string) map[crdt.NodeId]string {
 // configures the global slog instance based on the configuration.
 func setupLogger(cfg *config.Config) {
 	var level slog.Level
-	switch strings.ToUpper(cfg.LogLevel) {
+
+	logLevelStr := os.Getenv("LOG_LEVEL")
+	if logLevelStr == "" {
+		logLevelStr = "INFO"
+	}
+
+	switch strings.ToUpper(logLevelStr) {
 	case "DEBUG":
 		level = slog.LevelDebug
 	case "WARN":
@@ -90,8 +103,13 @@ func setupLogger(cfg *config.Config) {
 		Level: level,
 	}
 
+	logFormatStr := os.Getenv("LOG_FORMAT")
+	if logFormatStr == "" {
+		logFormatStr = "text"
+	}
+
 	var handler slog.Handler
-	if strings.ToLower(cfg.LogFormat) == "json" {
+	if strings.ToLower(logFormatStr) == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, opts)
 	} else {
 		handler = slog.NewTextHandler(os.Stdout, opts)
