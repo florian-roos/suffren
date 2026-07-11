@@ -7,11 +7,13 @@ import (
 )
 
 type Config struct {
-	Suffren          SuffrenConfig          `json:"suffren"`
+	Engine           EngineConfig           `json:"engine"`
 	LatticeAgreement LatticeAgreementConfig `json:"lattice_agreement"`
+	LogLevel         string                 `json:"log_level"`
+	LogFormat        string                 `json:"log_format"`
 }
 
-type SuffrenConfig struct {
+type EngineConfig struct {
 	// RoundTimeout is how long a proposal round may be in flight before
 	// it is considered dead and a new round is started.
 	// Must be > ProposalInterval.
@@ -43,7 +45,7 @@ func LoadConfig(filename string) (*Config, error) {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Suffren: SuffrenConfig{
+		Engine: EngineConfig{
 			RoundTimeout:       2 * time.Second,
 			StartupSyncTimeout: 20 * time.Second,
 			BatchTimeout:       10 * time.Millisecond,
@@ -52,5 +54,7 @@ func DefaultConfig() *Config {
 		LatticeAgreement: LatticeAgreementConfig{
 			MsgChanSize: 1024,
 		},
+		LogLevel:  "INFO",
+		LogFormat: "text",
 	}
 }

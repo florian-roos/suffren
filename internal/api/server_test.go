@@ -8,11 +8,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/florian-roos/suffren/internal/config"
 	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/florian-roos/suffren/internal/limiter"
 	"github.com/florian-roos/suffren/internal/testutils"
-	"github.com/florian-roos/suffren/internal/config"
-	"github.com/florian-roos/suffren/internal/engine"
 )
 
 func configForTest() *config.Config {

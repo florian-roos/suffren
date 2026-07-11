@@ -57,7 +57,8 @@ func NewServer(limiter *limiter.Limiter) *Server {
 // starts the API HTTP server.
 func (s *Server) Start(address string) error {
 	slog.Info("API server started", "address", address)
-	return http.ListenAndServe(address, s.router)
+	handler := LoggingMiddleware(s.router)
+	return http.ListenAndServe(address, handler)
 }
 
 // handles the API call to check wether the request respects the limit rules

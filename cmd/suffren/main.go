@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/florian-roos/suffren/internal/api"
-	"github.com/florian-roos/suffren/internal/crdt"
-	"github.com/florian-roos/suffren/internal/limiter"
 	"github.com/florian-roos/suffren/internal/config"
+	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/engine"
+	"github.com/florian-roos/suffren/internal/limiter"
 	"github.com/joho/godotenv"
 )
 
@@ -27,7 +27,10 @@ func main() {
 
 	peers := parseStringToPeersMap(os.Getenv("PEERS"))
 
-	node := engine.New(crdt.NodeId(*nodeId), peers, config.DefaultConfig())
+	cfg := config.DefaultConfig()
+	setupLogger(cfg)
+
+	node := engine.New(crdt.NodeId(*nodeId), peers, cfg)
 	limiter := limiter.NewLimiter(node)
 	apiServer := api.NewServer(limiter)
 
@@ -66,4 +69,32 @@ func parseStringToPeersMap(s string) map[crdt.NodeId]string {
 		}
 	}
 	return peers
+}
+
+// configures the global slog instance based on the configuration.
+func setupLogger(cfg *config.Config) {
+	var level slog.Level
+	switch strings.ToUpper(cfg.LogLevel) {
+	case "DEBUG":
+		level = slog.LevelDebug
+	case "WARN":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+
+	var handler slog.Handler
+	if strings.ToLower(cfg.LogFormat) == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	}
+
+	slog.SetDefault(slog.New(handler))
 }
