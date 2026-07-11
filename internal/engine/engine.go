@@ -70,7 +70,7 @@ func (s *Engine) Start() error {
 	}
 
 	// Retry sync() until it succeeds (peers may still be reconnecting).
-	deadline := time.Now().Add(s.cfg.Suffren.StartupSyncTimeout)
+	deadline := time.Now().Add(s.cfg.Engine.StartupSyncTimeout)
 	for time.Now().Before(deadline) {
 		ok := s.sync()
 		if ok {
@@ -80,7 +80,7 @@ func (s *Engine) Start() error {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("startup sync failed: unable to sync with cluster within %v", s.cfg.Suffren.StartupSyncTimeout)
+	return fmt.Errorf("startup sync failed: unable to sync with cluster within %v", s.cfg.Engine.StartupSyncTimeout)
 }
 
 // Increments the given key in localCounters and adds the operation to the batch.
@@ -95,10 +95,17 @@ func (s *Engine) IncrementKey(key string, value uint64) (uint64, bool) {
 	s.addOpToBatchLocked()
 	s.mu.Unlock()
 
-	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+	slog.Debug("Starting IncrementKey operation", "opID", opID, "key", key, "incValue", value)
+	start := time.Now()
+
+	ok, learned := s.waitForLearn(done, s.cfg.Engine.RoundTimeout)
 	if !ok {
+		slog.Error("increment failed: learn timeout", "opID", opID)
 		return 0, false
 	}
+
+	latency := time.Since(start)
+	slog.Info("IncrementKey successful (Quorum reached)", "opID", opID, "key", key, "latency_ms", latency.Milliseconds())
 	return learned.ValueForKey(key), true
 }
 
@@ -111,10 +118,17 @@ func (s *Engine) ValueForKey(key string) (uint64, bool) {
 	s.addOpToBatchLocked()
 	s.mu.Unlock()
 
-	ok, learned := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+	slog.Debug("Starting ValueForKey operation", "opID", opID, "key", key)
+	start := time.Now()
+
+	ok, learned := s.waitForLearn(done, s.cfg.Engine.RoundTimeout)
 	if !ok {
+		slog.Error("value read failed: learn timeout", "opID", opID)
 		return 0, false
 	}
+
+	latency := time.Since(start)
+	slog.Info("ValueForKey successful (Quorum reached)", "opID", opID, "key", key, "latency_ms", latency.Milliseconds())
 	return learned.ValueForKey(key), true
 }
 
@@ -131,7 +145,7 @@ func (s *Engine) Stop() {
 
 // Runs the flush function when the BatchTimeout timer expired or the MaxBatchSize is over.
 func (s *Engine) flusher() {
-	ticker := time.NewTicker(s.cfg.Suffren.BatchTimeout)
+	ticker := time.NewTicker(s.cfg.Engine.BatchTimeout)
 	defer ticker.Stop()
 
 	for {
@@ -160,7 +174,6 @@ func (s *Engine) flush() {
 func (s *Engine) waitForLearn(done <-chan *crdt.CounterMap, timeout time.Duration) (bool, *crdt.CounterMap) {
 	select {
 	case <-time.After(timeout):
-		slog.Error("Timeout, quorum didn't respond", slog.String("timeout", timeout.String()))
 		return false, nil
 	case value := <-done:
 		return true, value
@@ -185,7 +198,7 @@ func (s *Engine) sync() bool {
 	s.la.Proposer.Propose(proposed)
 	s.mu.Unlock()
 
-	ok, value := s.waitForLearn(done, s.cfg.Suffren.RoundTimeout)
+	ok, value := s.waitForLearn(done, s.cfg.Engine.RoundTimeout)
 	if ok {
 		s.mu.Lock()
 		s.localCounters = value
@@ -195,8 +208,8 @@ func (s *Engine) sync() bool {
 	return ok
 }
 
-// Suffren merges the received value and validates the end of its operation (Value or Increment) only if the value it
-// received contain what the suffren node proposed
+// merges the received value and validates the end of its operation (Value or Increment) only if the value it
+// received contain what the node proposed
 func (s *Engine) onLearn() func(crdt.Lattice) {
 	return func(learnedValue crdt.Lattice) {
 		s.mu.Lock()
@@ -241,7 +254,7 @@ func (s *Engine) unregisterPending(opID uint64) {
 // It needs a mutex on s.
 func (s *Engine) addOpToBatchLocked() {
 	s.unflushedOps++
-	if s.unflushedOps >= s.cfg.Suffren.MaxBatchSize {
+	if s.unflushedOps >= s.cfg.Engine.MaxBatchSize {
 		// We triger the flusher so it flush immediatly
 		select {
 		case s.flushTrigger <- struct{}{}:

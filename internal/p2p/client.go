@@ -37,7 +37,7 @@ func (c *Client) Send(targetAddr string, msg protocol.Message) error {
 	err := conn.Send(msg)
 	if err != nil {
 		// Connection is stale (peer restarted). Remove it and retry once.
-		slog.Warn("Send failed (stale connection), reconnecting", "targetAddr", targetAddr, "error", err)
+		slog.Warn("stale connection detected, reconnecting to peer", "targetAddr", targetAddr, "error", err)
 		c.mu.Lock()
 		delete(c.pool, targetAddr)
 		c.mu.Unlock()
@@ -70,7 +70,7 @@ func (c *Client) connect(targetAddr string) (*Connection, error) {
 	if err != nil {
 		c.mu.Lock()
 		if _, alreadyDown := c.knownDown[targetAddr]; !alreadyDown {
-			slog.Warn("Peer unreachable — suppressing further warnings until it recovers", "targetAddr", targetAddr)
+			slog.Warn("peer unreachable, suppressing connection warnings until recovery", "targetAddr", targetAddr)
 			c.knownDown[targetAddr] = struct{}{}
 		}
 		c.mu.Unlock()
@@ -81,7 +81,7 @@ func (c *Client) connect(targetAddr string) (*Connection, error) {
 
 	c.mu.Lock()
 	if _, wasDown := c.knownDown[targetAddr]; wasDown {
-		slog.Info("Reconnected to peer", "targetAddr", targetAddr)
+		slog.Info("connection established with peer", "targetAddr", targetAddr)
 		delete(c.knownDown, targetAddr)
 	}
 	c.pool[targetAddr] = conn
