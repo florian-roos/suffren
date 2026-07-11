@@ -11,7 +11,6 @@ import (
 	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/florian-roos/suffren/internal/limiter"
-	"github.com/florian-roos/suffren/internal/storage"
 	"github.com/joho/godotenv"
 )
 
@@ -27,18 +26,10 @@ func main() {
 	}
 
 	peers := parseStringToPeersMap(os.Getenv("PEERS"))
-
-	cfg := config.DefaultConfig()
-	setupLogger(cfg)
+	setupLogger()
 	slog.SetDefault(slog.Default().With("node_id", *nodeId))
 
-	dataPath := os.Getenv("DATA_PATH")
-	if dataPath == "" {
-		dataPath = "./data"
-	}
-	store := storage.NewFileStorage(dataPath + "/suffren_" + *nodeId + ".json")
-
-	node := engine.New(crdt.NodeId(*nodeId), peers, cfg, store)
+	node := engine.New(crdt.NodeId(*nodeId), peers, config.DefaultConfig())
 	limiter := limiter.NewLimiter(node)
 	apiServer := api.NewServer(limiter)
 
@@ -80,7 +71,7 @@ func parseStringToPeersMap(s string) map[crdt.NodeId]string {
 }
 
 // configures the global slog instance based on the configuration.
-func setupLogger(cfg *config.Config) {
+func setupLogger() {
 	var level slog.Level
 
 	logLevelStr := os.Getenv("LOG_LEVEL")
