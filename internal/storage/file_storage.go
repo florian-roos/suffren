@@ -48,13 +48,13 @@ func (f *FileStorage) Save(state *crdt.CounterMap) error {
 	}
 
 	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return err
 	}
 
 	// Force write to physical disk before renaming
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return err
 	}
 
