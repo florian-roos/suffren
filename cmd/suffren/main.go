@@ -29,6 +29,7 @@ func main() {
 
 	cfg := config.DefaultConfig()
 	setupLogger(cfg)
+	slog.SetDefault(slog.Default().With("node_id", *nodeId))
 
 	node := engine.New(crdt.NodeId(*nodeId), peers, cfg)
 	limiter := limiter.NewLimiter(node)

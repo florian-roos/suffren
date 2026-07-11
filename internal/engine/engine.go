@@ -100,7 +100,7 @@ func (s *Engine) IncrementKey(key string, value uint64) (uint64, bool) {
 
 	ok, learned := s.waitForLearn(done, s.cfg.Engine.RoundTimeout)
 	if !ok {
-		slog.Error("IncrementKey failed: timeout waiting for learn", "opID", opID)
+		slog.Error("increment failed: learn timeout", "opID", opID)
 		return 0, false
 	}
 
@@ -123,7 +123,7 @@ func (s *Engine) ValueForKey(key string) (uint64, bool) {
 
 	ok, learned := s.waitForLearn(done, s.cfg.Engine.RoundTimeout)
 	if !ok {
-		slog.Error("ValueForKey failed: timeout waiting for learn", "opID", opID)
+		slog.Error("value read failed: learn timeout", "opID", opID)
 		return 0, false
 	}
 
@@ -174,7 +174,6 @@ func (s *Engine) flush() {
 func (s *Engine) waitForLearn(done <-chan *crdt.CounterMap, timeout time.Duration) (bool, *crdt.CounterMap) {
 	select {
 	case <-time.After(timeout):
-		slog.Error("Timeout, quorum didn't respond", slog.String("timeout", timeout.String()))
 		return false, nil
 	case value := <-done:
 		return true, value
