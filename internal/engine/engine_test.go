@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/florian-roos/suffren/internal/crdt"
+	"github.com/florian-roos/suffren/internal/storage"
 )
 
 func TestSuffren_ValueForKey_on_an_unknown_key(t *testing.T) {
@@ -106,8 +107,8 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	cfg := configForTest()
 
 	// Start N1 and N2 concurrently so they can form a quorum (2 out of 3)
-	s1 := New(crdt.NodeId("N1"), peers, cfg)
-	s2 := New(crdt.NodeId("N2"), peers, cfg)
+	s1 := New(crdt.NodeId("N1"), peers, cfg, &storage.NoopStorage{})
+	s2 := New(crdt.NodeId("N2"), peers, cfg, &storage.NoopStorage{})
 
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
@@ -135,7 +136,7 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 	}
 
 	// Now start N3
-	s3 := New(crdt.NodeId("N3"), peers, cfg)
+	s3 := New(crdt.NodeId("N3"), peers, cfg, &storage.NoopStorage{})
 	if err := s3.Start(); err != nil {
 		t.Fatalf("failed to start node 3: %v", err)
 	}
@@ -143,4 +144,58 @@ func TestSuffren_late_joining_node_catches_up_with_all_keys(t *testing.T) {
 
 	waitForConvergence(t, "key_1", 10, s1, s2, s3)
 	waitForConvergence(t, "key_2", 10, s1, s2, s3)
+}
+
+func TestSuffren_crash_and_recovery_with_persistence(t *testing.T) {
+	// GIVEN: A 3-node cluster, where Node 3 uses a real file on disk
+	peers := peers3bis()
+	cfg := configForTest()
+	tempDir := t.TempDir()
+
+	n3StorePath := tempDir + "/n3.json"
+
+	s1 := New(crdt.NodeId("N1"), peers, cfg, &storage.NoopStorage{})
+	s2 := New(crdt.NodeId("N2"), peers, cfg, &storage.NoopStorage{})
+	s3 := New(crdt.NodeId("N3"), peers, cfg, storage.NewFileStorage(n3StorePath))
+
+	var wgStart sync.WaitGroup
+	wgStart.Add(3)
+	startNode := func(s *Engine) {
+		defer wgStart.Done()
+		if err := s.Start(); err != nil {
+			t.Errorf("node failed to start: %v", err)
+		}
+	}
+	go startNode(s1)
+	go startNode(s2)
+	go startNode(s3)
+	wgStart.Wait()
+
+	defer s1.Stop()
+	defer s2.Stop()
+
+	// 1. Increment a key while all 3 are alive
+	s1.IncrementKey("persistent_key", 10)
+	waitForConvergence(t, "persistent_key", 10, s1, s2, s3)
+
+	// 2. CRASH Node 3
+	s3.Stop()
+
+	// 3. Increment the key while N3 is dead (Quorum 2/3 still works!)
+	s2.IncrementKey("persistent_key", 5)
+	waitForConvergence(t, "persistent_key", 15, s1, s2)
+
+	// 4. RESTART Node 3 with the exact same file
+	s3Recovered := New(crdt.NodeId("N3"), peers, cfg, storage.NewFileStorage(n3StorePath))
+
+	// Start N3 again. It should:
+	// A) Load '10' from disk immediately.
+	// B) During its startup sync(), catch up with the '+5' from the network.
+	if err := s3Recovered.Start(); err != nil {
+		t.Fatalf("recovered node 3 failed to start: %v", err)
+	}
+	defer s3Recovered.Stop()
+
+	// 5. Verify N3 fully caught up and converges with the rest
+	waitForConvergence(t, "persistent_key", 15, s1, s2, s3Recovered)
 }
