@@ -24,6 +24,8 @@ The result: any node can accept a rate limit decision locally, propagate it to t
 - **Linearizable reads and writes**: A `Check` or `Status` call blocks until a quorum has confirmed the value, so clients never see stale data.
 - **Fault-tolerant**: Tolerates network partitions and node crashes (as long as a quorum remains reachable).
 - **Sliding-window rate limiting**: Supports per-identifier, per-resource limits with configurable time windows.
+- **Persistence & Crash Recovery**: Nodes automatically snapshot their state to disk (atomic writes + `fsync`) and recover across restarts.
+- **Observability**: Built-in structured JSON logging (`slog`) with automatic latency tracking and request tracing.
 - **HTTP API**: Drop-in rate limiting service with a simple JSON API.
 - **Standard library networking**: TCP transport with `encoding/gob` serialization; no external messaging dependencies.
 
@@ -217,6 +219,7 @@ internal/
   p2p/                  # TCP transport (Server, Client, Connection, Network)
   protocol/             # Message and Command wire types (gob-encoded)
   retry/                # Jitter, Retry helpers
+  storage/              # Disk persistence and snapshotting (FileStorage)
   testutils/            # Local peers generator
 ```
 
