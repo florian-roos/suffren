@@ -224,6 +224,10 @@ func (s *Engine) sync() bool {
 	if ok {
 		s.mu.Lock()
 		s.localCounters = value
+
+		if err := s.storage.Save(s.localCounters); err != nil {
+			slog.Error("failed to save state to disk", "error", err)
+		}
 		s.mu.Unlock()
 	}
 
