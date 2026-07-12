@@ -29,64 +29,6 @@ The result: any node can accept a rate limit decision locally, propagate it to t
 - **HTTP API**: Drop-in rate limiting service with a simple JSON API.
 - **Standard library networking**: TCP transport with `encoding/gob` serialization; no external messaging dependencies.
 
-## Architecture
-
-Each node runs three independent roles as separate goroutines, each with its own mailbox (channel). This isolation prevents deadlocks during concurrent network I/O (a proposer waiting for quorum does not block the acceptor from handling incoming proposals from other nodes).
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                        Node                             │
-│                                                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐     │
-│  │  Proposer   │  │  Acceptor   │  │   Learner    │     │
-│  │             │  │             │  │              │     │
-│  │ Broadcasts  │  │ Validates   │  │ Commits and  │     │
-│  │ PROPOSE,    │  │ proposals,  │  │ re-broadcasts│     │
-│  │ collects    │  │ replies     │  │ LEARN values │     │
-│  │ ACKs/NACKs  │  │ ACK or NACK │  │              │     │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘     │
-│         │                │                │             │
-│         └────────────────┴────────────────┘             │
-│                          │                              │
-│                  ┌───────┴───────┐                      │
-│                  │ MessageRouter │                      │
-│                  │ (dispatches   │                      │
-│                  │  by type)     │                      │
-│                  └───────┬───────┘                      │
-│                          │                              │
-│                  ┌───────┴───────┐                      │
-│                  │  P2P Network  │                      │
-│                  │  (TCP + gob)  │                      │
-│                  └───────────────┘                      │
-└─────────────────────────────────────────────────────────┘
-```
-
-### The Three Roles
-
-**Proposer**: A node wants to propagate its local counter state (e.g., after a rate limit check incremented a counter). It broadcasts `PROPOSE(value)` to all peers. If a quorum of acceptors reply `ACK`, the value is committed and the proposer broadcasts `LEARN`. If any acceptor replies `NACK` (because it has seen a higher value), the proposer merges that value into its proposal and retries. This loop is bounded (each NACK forces a strictly upward move in the lattice, so the proposer can only retry a finite number of times before its value dominates everything).
-
-**Acceptor**: Each node also acts as an acceptor for other nodes' proposals. It maintains the highest value it has accepted. When it receives `PROPOSE(v)`, it checks whether its accepted value is below `v` in the lattice. If so, it accepts and replies `ACK`. If not, it replies `NACK` with its current accepted value, helping the proposer converge. The quorum intersection property guarantees that once a value is learned, any future proposal must overlap with at least one node that has seen it, forcing the proposer to adopt the higher value.
-
-**Learner**: On receiving `LEARN(v)`, if `v` is strictly greater than the node's current learned value, the learner applies it locally and re-broadcasts `LEARN` to all other peers. This gossip-style dissemination ensures reliable delivery even if the original proposer crashes after sending the first `LEARN`. Re-broadcasting only on strict growth prevents infinite loops.
-
-### Rate Limiter Layer
-
-On top of the consensus layer, Suffren implements a **sliding-window counter** rate limiter. Each rate limit rule (identifier + resource + limit + window) is mapped to deterministic CRDT keys based on the window's start timestamp:
-
-```
-Key format: <identifier>:<resource>:<window_seconds>:<window_start_RFC3339>
-```
-
-For each check, two keys are used (one for the current time window and one for the previous window). The estimated consumption is a weighted sum:
-
-```
-total = (previous_window_count × overlap_weight) + current_window_count
-```
-
-where `overlap_weight` decreases linearly from 1 to 0 as the current window progresses. This gives a smooth sliding-window approximation without storing individual request timestamps.
-
-The `Check` operation first performs a **local** (non-quorum) read to short-circuit if the limit is already exceeded, avoiding an unnecessary cluster round-trip. Only if the local estimate is under the limit does it increment the counter through the cluster and return the authoritative decision.
-
 ## Getting Started
 
 ### Prerequisites
@@ -96,11 +38,7 @@ The `Check` operation first performs a **local** (non-quorum) read to short-circ
 
 ### Configuration
 
-Create a `.env` file in the working directory:
-
-```env
-PEERS=N1:localhost:8031,N2:localhost:8032,N3:localhost:8033
-```
+Create a `.env` file in the working directory (see .env.example)
 
 Each entry is `NodeId:address`. Every node in the cluster must have the same `PEERS` list.
 
@@ -127,6 +65,22 @@ go run ./cmd/suffren --api --id N1 --api-port 8081
 | `--api`      | `false` | Start the HTTP API server instead of the CLI |
 | `--id`       | `N1`    | Unique node identifier in the cluster        |
 | `--api-port` | `8080`  | Listening port for the HTTP API              |
+
+### Running with Docker
+
+Suffren is containerized with Docker. The image contains a the static binary and an alpine runtime.
+
+To build the image locally:
+
+```bash
+docker build -t suffren:latest .
+```
+
+To run a node as a Docker container:
+
+```bash
+docker run --rm -p 8080:8080 -e PEERS="N1:localhost:8031,N2:localhost:8032,N3:localhost:8033" suffren:latest
+```
 
 ## HTTP API
 
@@ -230,6 +184,64 @@ internal/
 All other functionality uses the Go standard library.
 
 ---
+
+## Architecture
+
+Each node runs three independent roles as separate goroutines, each with its own mailbox (channel). This isolation prevents deadlocks during concurrent network I/O (a proposer waiting for quorum does not block the acceptor from handling incoming proposals from other nodes).
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                        Node                             │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐     │
+│  │  Proposer   │  │  Acceptor   │  │   Learner    │     │
+│  │             │  │             │  │              │     │
+│  │ Broadcasts  │  │ Validates   │  │ Commits and  │     │
+│  │ PROPOSE,    │  │ proposals,  │  │ re-broadcasts│     │
+│  │ collects    │  │ replies     │  │ LEARN values │     │
+│  │ ACKs/NACKs  │  │ ACK or NACK │  │              │     │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘     │
+│         │                │                │             │
+│         └────────────────┴────────────────┘             │
+│                          │                              │
+│                  ┌───────┴───────┐                      │
+│                  │ MessageRouter │                      │
+│                  │ (dispatches   │                      │
+│                  │  by type)     │                      │
+│                  └───────┬───────┘                      │
+│                          │                              │
+│                  ┌───────┴───────┐                      │
+│                  │  P2P Network  │                      │
+│                  │  (TCP + gob)  │                      │
+│                  └───────────────┘                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+### The Three Roles
+
+**Proposer**: A node wants to propagate its local counter state (e.g., after a rate limit check incremented a counter). It broadcasts `PROPOSE(value)` to all peers. If a quorum of acceptors reply `ACK`, the value is committed and the proposer broadcasts `LEARN`. If any acceptor replies `NACK` (because it has seen a higher value), the proposer merges that value into its proposal and retries. This loop is bounded (each NACK forces a strictly upward move in the lattice, so the proposer can only retry a finite number of times before its value dominates everything).
+
+**Acceptor**: Each node also acts as an acceptor for other nodes' proposals. It maintains the highest value it has accepted. When it receives `PROPOSE(v)`, it checks whether its accepted value is below `v` in the lattice. If so, it accepts and replies `ACK`. If not, it replies `NACK` with its current accepted value, helping the proposer converge. The quorum intersection property guarantees that once a value is learned, any future proposal must overlap with at least one node that has seen it, forcing the proposer to adopt the higher value.
+
+**Learner**: On receiving `LEARN(v)`, if `v` is strictly greater than the node's current learned value, the learner applies it locally and re-broadcasts `LEARN` to all other peers. This gossip-style dissemination ensures reliable delivery even if the original proposer crashes after sending the first `LEARN`. Re-broadcasting only on strict growth prevents infinite loops.
+
+### Rate Limiter Layer
+
+On top of the consensus layer, Suffren implements a **sliding-window counter** rate limiter. Each rate limit rule (identifier + resource + limit + window) is mapped to deterministic CRDT keys based on the window's start timestamp:
+
+```
+Key format: <identifier>:<resource>:<window_seconds>:<window_start_RFC3339>
+```
+
+For each check, two keys are used (one for the current time window and one for the previous window). The estimated consumption is a weighted sum:
+
+```
+total = (previous_window_count × overlap_weight) + current_window_count
+```
+
+where `overlap_weight` decreases linearly from 1 to 0 as the current window progresses. This gives a smooth sliding-window approximation without storing individual request timestamps.
+
+The `Check` operation first performs a **local** (non-quorum) read to short-circuit if the limit is already exceeded, avoiding an unnecessary cluster round-trip. Only if the local estimate is under the limit does it increment the counter through the cluster and return the authoritative decision.
 
 ## Technical Foundations
 
