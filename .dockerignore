@@ -1,0 +1,27 @@
+# Exclude git directory
+
+.git/
+.github/
+
+# Exclude local environment files
+
+.env
+.env.local
+
+# Exclude local data and persistence
+
+data/
+*.json
+*.tmp
+
+# Exclude Go build artifacts
+
+suffren
+*.exe
+*.test
+
+# Exclude IDE/Editor files
+
+.vscode/
+.idea/
+*.swp
