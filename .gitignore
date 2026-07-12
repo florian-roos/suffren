@@ -2,3 +2,9 @@ TODO.md
 .env
 test.http
 data/
+
+# Compiled binaries
+/bench
+/suffren
+*.test
+*.exe
