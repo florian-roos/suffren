@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type EngineConfig struct {
 	StartupSyncTimeout time.Duration // StartupSyncTimeout is the maximum time to retry Value() on startup
 	BatchTimeout       time.Duration // BatchTimeout is the time we wait before a batch is proposed to the network
 	MaxBatchSize       int
+	SnapshotInterval   time.Duration // SnapshotInterval is the time between automatic background disk snapshots
 }
 
 type LatticeAgreementConfig struct {
@@ -42,15 +44,30 @@ func LoadConfig(filename string) (*Config, error) {
 }
 
 func DefaultConfig() *Config {
-	return &Config{
+	cfg := &Config{
 		Engine: EngineConfig{
 			RoundTimeout:       2 * time.Second,
 			StartupSyncTimeout: 20 * time.Second,
-			BatchTimeout:       10 * time.Millisecond,
+			BatchTimeout:       1 * time.Millisecond,
 			MaxBatchSize:       100,
+			SnapshotInterval:   5 * time.Second,
 		},
 		LatticeAgreement: LatticeAgreementConfig{
 			MsgChanSize: 1024,
 		},
 	}
+
+	if envBatchTimeout := os.Getenv("SUFFREN_BATCH_TIMEOUT"); envBatchTimeout != "" {
+		if d, err := time.ParseDuration(envBatchTimeout); err == nil {
+			cfg.Engine.BatchTimeout = d
+		}
+	}
+
+	if envBatchSize := os.Getenv("SUFFREN_BATCH_SIZE"); envBatchSize != "" {
+		if size, err := strconv.Atoi(envBatchSize); err == nil {
+			cfg.Engine.MaxBatchSize = size
+		}
+	}
+
+	return cfg
 }

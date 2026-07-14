@@ -35,14 +35,22 @@ func NewServer(address string) *Server {
 
 func (s *Server) Listen() (<-chan protocol.Message, error) {
 	var err error
-	s.listener, err = net.Listen("tcp", s.address)
+
+	// Extract the port from the address to bind to all interfaces
+	_, port, err := net.SplitHostPort(s.address)
+	if err != nil {
+		return nil, err
+	}
+	bindAddress := "[::]:" + port
+
+	s.listener, err = net.Listen("tcp", bindAddress)
 
 	if err != nil {
 		slog.Error("Failed to start server", "error", err)
 		return nil, err
 	}
 
-	slog.Info("Listening", "address", s.address)
+	slog.Info("Listening", "address", bindAddress, "advertised", s.address)
 	msgChanel := make(chan protocol.Message, MsgChanSize)
 	s.wg.Add(1)
 	go func() {

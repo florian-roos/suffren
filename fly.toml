@@ -1,0 +1,23 @@
+app = "suffren-cluster"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # We use Fly's internal DNS and use the region code directly as the Node ID
+  PEERS = "cdg:cdg.suffren-cluster.internal:8031,lax:lax.suffren-cluster.internal:8031,sin:sin.suffren-cluster.internal:8031"
+  LOG_LEVEL = "INFO"
+  LOG_FORMAT = "json"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 3
+
+[[mounts]]
+  source = "suffren_data"
+  destination = "/app/data"
+  initial_size = "1gb"

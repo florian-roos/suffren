@@ -17,9 +17,19 @@ import (
 
 func main() {
 	runAPI := flag.Bool("api", false, "Start the API HTTP server of Suffren Watchguard")
-	nodeId := flag.String("id", "N1", "Unique identifier of the node in the cluster (ex: N1)")
+	nodeIdFlag := flag.String("id", "", "Unique identifier of the node in the cluster (ex: N1)")
 	apiPort := flag.String("api-port", "8080", "Listening port for the HTTP API (ex: 8081)")
 	flag.Parse()
+
+	// Use the region as nodeID in Fly.io
+	nodeId := *nodeIdFlag
+	if nodeId == "" {
+		if flyRegion := os.Getenv("FLY_REGION"); flyRegion != "" {
+			nodeId = flyRegion
+		} else {
+			nodeId = "N1"
+		}
+	}
 
 	err := godotenv.Load()
 	if err != nil {
@@ -28,7 +38,7 @@ func main() {
 
 	peers := parseStringToPeersMap(os.Getenv("PEERS"))
 	setupLogger()
-	slog.SetDefault(slog.Default().With("node_id", *nodeId))
+	slog.SetDefault(slog.Default().With("node_id", nodeId))
 
 	cfg := config.DefaultConfig()
 
@@ -36,9 +46,9 @@ func main() {
 	if dataPath == "" {
 		dataPath = "./data"
 	}
-	store := storage.NewFileStorage(dataPath + "/suffren_" + *nodeId + ".json")
+	store := storage.NewFileStorage(dataPath + "/suffren_" + nodeId + ".json")
 
-	node := engine.New(crdt.NodeId(*nodeId), peers, cfg, store)
+	node := engine.New(crdt.NodeId(nodeId), peers, cfg, store)
 	limiter := limiter.NewLimiter(node)
 	apiServer := api.NewServer(limiter)
 
@@ -49,7 +59,7 @@ func main() {
 			slog.Error("Failed to start suffren node", "error", err)
 		}
 
-		err = apiServer.Start("localhost:" + *apiPort)
+		err = apiServer.Start("[::]:" + *apiPort)
 		if err != nil {
 			slog.Error("Failed to start API server", "error", err)
 		}

@@ -29,6 +29,7 @@ type Engine struct {
 	pending       map[uint64]*pendingOp
 	unflushedOps  int
 	flushTrigger  chan struct{}
+	stopCh        chan struct{}
 	la            *latticeagreement.LatticeAgreement
 	cfg           *config.Config
 	storage       storage.Storage
@@ -57,6 +58,7 @@ func New(nodeId crdt.NodeId, peers map[crdt.NodeId]string, cfg *config.Config, s
 		pending:       make(map[uint64]*pendingOp),
 		unflushedOps:  0,
 		flushTrigger:  make(chan struct{}, 1),
+		stopCh:        make(chan struct{}),
 		cfg:           cfg,
 		storage:       store,
 	}
@@ -88,6 +90,7 @@ func (s *Engine) Start() error {
 		if ok {
 			slog.Info("Startup sync complete")
 			go s.flusher()
+			go s.snapshotLoop()
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -152,6 +155,7 @@ func (s *Engine) ValueForKeyLocal(key string) uint64 {
 
 // Stops the node and its network service gracefully.
 func (s *Engine) Stop() {
+	close(s.stopCh)
 	s.node.Stop()
 }
 
@@ -162,6 +166,8 @@ func (s *Engine) flusher() {
 
 	for {
 		select {
+		case <-s.stopCh:
+			return
 		case <-ticker.C: // The BatchTimeout timer expired
 			s.flush()
 		case <-s.flushTrigger: // We reached the the MaxBatchSize
@@ -182,13 +188,34 @@ func (s *Engine) flush() {
 	s.unflushedOps = 0
 	s.mu.Unlock()
 
-	// Persist the state to disk first.
-	if err := s.storage.Save(stateToPropose); err != nil {
-		slog.Error("failed to save state to disk", "error", err)
-	}
-
 	// Propose the state to the Lattice Agreement cluster.
 	s.la.Proposer.Propose(stateToPropose)
+}
+
+func (s *Engine) snapshotLoop() {
+	ticker := time.NewTicker(s.cfg.Engine.SnapshotInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopCh:
+			s.mu.Lock()
+			finalState := s.localCounters.Copy()
+			s.mu.Unlock()
+			if err := s.storage.Save(finalState); err != nil {
+				slog.Error("failed to take background snapshot on stop", "error", err)
+			}
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			stateCopy := s.localCounters.Copy()
+			s.mu.Unlock()
+
+			if err := s.storage.Save(stateCopy); err != nil {
+				slog.Error("failed to take background snapshot", "error", err)
+			}
+		}
+	}
 }
 
 // Helpers
@@ -224,10 +251,6 @@ func (s *Engine) sync() bool {
 	if ok {
 		s.mu.Lock()
 		s.localCounters = value
-
-		if err := s.storage.Save(s.localCounters); err != nil {
-			slog.Error("failed to save state to disk", "error", err)
-		}
 		s.mu.Unlock()
 	}
 
