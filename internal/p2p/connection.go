@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/gob"
 	"net"
+	"sync"
 
 	"github.com/florian-roos/suffren/internal/protocol"
 )
@@ -13,6 +14,8 @@ type Connection struct {
 	writer  *bufio.Writer
 	encoder *gob.Encoder
 	decoder *gob.Decoder
+
+	writeMu sync.Mutex
 }
 
 func NewConnection(conn net.Conn) *Connection {
@@ -27,7 +30,9 @@ func NewConnection(conn net.Conn) *Connection {
 	return &connection
 }
 
-func (connection Connection) Send(message protocol.Message) error {
+func (connection *Connection) Send(message protocol.Message) error {
+	connection.writeMu.Lock()
+	defer connection.writeMu.Unlock()
 	err := connection.encoder.Encode(message)
 	if err == nil {
 		err = connection.writer.Flush()
@@ -35,7 +40,7 @@ func (connection Connection) Send(message protocol.Message) error {
 	return err
 }
 
-func (connection Connection) Receive() (protocol.Message, error) {
+func (connection *Connection) Receive() (protocol.Message, error) {
 
 	var message protocol.Message
 	err := connection.decoder.Decode(&message)
