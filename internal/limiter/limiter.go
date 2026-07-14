@@ -113,15 +113,12 @@ func (l *Limiter) incrementAndGetTotalCountInSlidingWindow(identifier string, re
 	currentKey := l.buildKey(identifier, resource, rule, currentWindowStart)
 	previousKey := l.buildKey(identifier, resource, rule, previousWindowStart)
 
-	prevCount, ok := l.engine.ValueForKey(previousKey)
-	if !ok {
-		return 0, false
-	}
-
 	currentCount, ok := l.engine.IncrementKey(currentKey, value)
 	if !ok {
 		return 0, false
 	}
+
+	prevCount := l.engine.ValueForKeyLocal(previousKey)
 
 	// Calculate the Sliding Window estimate
 	// Formula: (Previous Window Count * Overlap Weight) + Current Window Count
@@ -144,15 +141,12 @@ func (l *Limiter) getTotalCountInSlidingWindow(identifier string, resource strin
 	currentKey := l.buildKey(identifier, resource, rule, currentWindowStart)
 	previousKey := l.buildKey(identifier, resource, rule, previousWindowStart)
 
-	prevCount, ok := l.engine.ValueForKey(previousKey)
-	if !ok {
-		return 0, false
-	}
-
 	currentCount, ok := l.engine.ValueForKey(currentKey)
 	if !ok {
 		return 0, false
 	}
+
+	prevCount := l.engine.ValueForKeyLocal(previousKey)
 
 	// Calculate the Sliding Window estimate
 	// Formula: (Previous Window Count * Overlap Weight) + Current Window Count
