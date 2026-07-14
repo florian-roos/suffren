@@ -112,7 +112,7 @@ func main() {
 				// even if we don't care about the content. If we don't do this,
 				// the Go HTTP client cannot reuse the underlying TCP connection!
 				_, _ = io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 
 				results <- Result{Duration: duration, StatusCode: resp.StatusCode}
 			}

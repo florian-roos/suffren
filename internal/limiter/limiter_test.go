@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/florian-roos/suffren/internal/crdt"
-	"github.com/florian-roos/suffren/internal/testutils"
 	"github.com/florian-roos/suffren/internal/config"
+	"github.com/florian-roos/suffren/internal/crdt"
 	"github.com/florian-roos/suffren/internal/engine"
 	"github.com/florian-roos/suffren/internal/storage"
+	"github.com/florian-roos/suffren/internal/testutils"
 )
 
 func configForTest() *config.Config {
