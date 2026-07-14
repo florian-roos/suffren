@@ -10,10 +10,10 @@ func BenchmarkSoloIncrement(b *testing.B) {
 	s1, _, _ := startCluster(b, peers)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, ok := s1.IncrementKey("bench_key", 1)
 		if !ok {
-			b.Fatalf("Increment %d timed out", i)
+			b.Fatalf("Increment timed out")
 		}
 	}
 }
@@ -65,10 +65,10 @@ func BenchmarkValueForKey(b *testing.B) {
 	s1.IncrementKey("bench_key", 1)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, ok := s1.ValueForKey("bench_key")
 		if !ok {
-			b.Fatalf("Value %d timed out", i)
+			b.Fatalf("Value fetch timed out")
 		}
 	}
 }
