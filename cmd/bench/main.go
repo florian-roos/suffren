@@ -27,6 +27,7 @@ func main() {
 		concurrency = flag.Int("c", 50, "Number of workers to run concurrently.")
 		targetUrls  = flag.String("url", "http://localhost:8081/check", "Comma-separated list of URLs to benchmark.")
 		randomId    = flag.Bool("random-id", false, "Use random identifiers to avoid CRDT contention.")
+		keyRange    = flag.Int("key-range", 1000000, "Range of random keys to generate when random-id is true.")
 	)
 	flag.Parse()
 
@@ -79,7 +80,7 @@ func main() {
 			for range jobs {
 				var bodyBytes []byte
 				if *randomId {
-					id := fmt.Sprintf("user_%d", rand.Intn(1000000))
+					id := fmt.Sprintf("user_%d", rand.Intn(*keyRange))
 					payload := map[string]interface{}{
 						"identifier":      id,
 						"resource":        "api_bench",
